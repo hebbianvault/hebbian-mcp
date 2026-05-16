@@ -1,0 +1,54 @@
+{
+  "name": "@hebbian/mcp-tenant",
+  "version": "0.1.0",
+  "description": "Customer-installable MCP server for the Hebbian tenant brain. One package, scope-by-token (Employee or Company). Install in Claude Code, Claude Desktop, Cursor, Cowork, or any MCP-compatible agent.",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "hebbian-mcp": "dist/index.js"
+  },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "node --experimental-vm-modules /Users/stephanemaes/Documents/GitHub/Hebbian/node_modules/.bin/jest --config=jest.config.cjs tests/",
+    "prepublishOnly": "npm run build && npm test",
+    "start": "node dist/index.js"
+  },
+  "keywords": [
+    "mcp",
+    "hebbian",
+    "knowledge-graph",
+    "ai-tools",
+    "model-context-protocol"
+  ],
+  "author": "Hebbian",
+  "license": "UNLICENSED",
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.29.0"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.14",
+    "@types/node": "^22.0.0",
+    "jest": "^29.7.0",
+    "ts-jest": "^29.4.9",
+    "typescript": "^5.6.3"
+  }
+}

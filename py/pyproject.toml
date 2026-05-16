@@ -1,0 +1,52 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "hebbian-mcp-tenant"
+version = "0.1.0"
+description = "Customer-installable MCP server for the Hebbian tenant brain (Python). Same 8 tools as the Node.js sibling @hebbian/mcp-tenant."
+readme = "README.md"
+license = { text = "UNLICENSED" }
+requires-python = ">=3.11"
+keywords = ["mcp", "hebbian", "knowledge-graph", "ai-tools", "model-context-protocol"]
+authors = [
+    { name = "Hebbian", email = "hello@hebbian.ai" }
+]
+
+dependencies = [
+    "mcp>=1.0.0",
+    "httpx>=0.27.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "respx>=0.21",
+    "ruff>=0.5",
+    "pyright>=1.1",
+]
+
+[project.scripts]
+hebbian-mcp = "hebbian_mcp_tenant.server:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/hebbian_mcp_tenant"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "W", "ANN", "S", "B", "UP"]
+ignore = ["ANN101", "ANN102", "S101"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.pyright]
+pythonVersion = "3.11"
+typeCheckingMode = "basic"
+include = ["src", "tests"]
