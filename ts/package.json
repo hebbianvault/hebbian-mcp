@@ -21,7 +21,7 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsc --watch",
-    "test": "node --experimental-vm-modules /Users/stephanemaes/Documents/GitHub/Hebbian/node_modules/.bin/jest --config=jest.config.cjs tests/",
+    "test": "node --experimental-vm-modules node_modules/.bin/jest --config=jest.config.cjs tests/",
     "prepublishOnly": "npm run build && npm test",
     "start": "node dist/index.js"
   },
@@ -33,7 +33,7 @@
     "model-context-protocol"
   ],
   "author": "Hebbian",
-  "license": "UNLICENSED",
+  "license": "Apache-2.0",
   "publishConfig": {
     "access": "public",
     "registry": "https://registry.npmjs.org/"

@@ -116,4 +116,4 @@ npm test
 
 ## License
 
-UNLICENSED — proprietary. See the Hebbian Enterprise License Agreement.
+Apache-2.0. See the root [LICENSE](../LICENSE) file.

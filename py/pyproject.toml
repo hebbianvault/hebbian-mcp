@@ -7,7 +7,7 @@ name = "hebbian-mcp-tenant"
 version = "0.1.0"
 description = "Customer-installable MCP server for the Hebbian tenant brain (Python). Same 8 tools as the Node.js sibling @hebbian/mcp-tenant."
 readme = "README.md"
-license = { text = "UNLICENSED" }
+license = { text = "Apache-2.0" }
 requires-python = ">=3.11"
 keywords = ["mcp", "hebbian", "knowledge-graph", "ai-tools", "model-context-protocol"]
 authors = [

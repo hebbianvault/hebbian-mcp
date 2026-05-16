@@ -68,4 +68,4 @@ The canonical package is `@hebbian/mcp-tenant` on npm. This Python sibling has i
 
 ## License
 
-UNLICENSED — proprietary. See the Hebbian Enterprise License Agreement.
+Apache-2.0. See the root [LICENSE](../LICENSE) file.

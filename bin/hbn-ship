@@ -1,0 +1,132 @@
+#!/usr/bin/env bash
+# hbn-ship — pre-push gate for hebbian-mcp.
+#
+# Runs lint + typecheck + tests for both ts/ and py/ before allowing a push.
+# Mirrors the hbn-ship parity contract from the closed Hebbian repo (TICK-474).
+#
+# Usage:
+#   bin/hbn-ship           # run all checks, then git push
+#   bin/hbn-ship --check   # run checks only, no push
+#   bin/hbn-ship --ts      # TypeScript checks only
+#   bin/hbn-ship --py      # Python checks only
+
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+cd "$REPO_ROOT"
+
+CHECK_ONLY=0
+TS_ONLY=0
+PY_ONLY=0
+
+for arg in "$@"; do
+  case "$arg" in
+    --check)   CHECK_ONLY=1 ;;
+    --ts)      TS_ONLY=1 ;;
+    --py)      PY_ONLY=1 ;;
+    --help|-h) sed -n '3,12p' "$0"; exit 0 ;;
+  esac
+done
+
+ERRORS=0
+
+run_ts() {
+  echo "── TypeScript ──────────────────────────────────"
+  cd "$REPO_ROOT/ts"
+
+  echo "  install..."
+  npm ci --silent 2>&1 | tail -2
+
+  echo "  typecheck..."
+  if ! npx tsc --noEmit 2>&1; then
+    echo "✗ tsc failed"
+    ERRORS=$((ERRORS + 1))
+  else
+    echo "✓ tsc"
+  fi
+
+  echo "  tests..."
+  if ! npm test 2>&1; then
+    echo "✗ jest failed"
+    ERRORS=$((ERRORS + 1))
+  else
+    echo "✓ jest"
+  fi
+
+  cd "$REPO_ROOT"
+}
+
+run_py() {
+  echo "── Python ──────────────────────────────────────"
+  cd "$REPO_ROOT/py"
+
+  echo "  install..."
+  if command -v uv &>/dev/null; then
+    uv sync --dev --quiet
+  else
+    pip install -e ".[dev]" --quiet
+  fi
+
+  echo "  lint (ruff)..."
+  if command -v uv &>/dev/null; then
+    if ! uv run ruff check src/ tests/ 2>&1; then
+      echo "✗ ruff failed"
+      ERRORS=$((ERRORS + 1))
+    else
+      echo "✓ ruff"
+    fi
+  else
+    if ! python -m ruff check src/ tests/ 2>&1; then
+      echo "✗ ruff failed"
+      ERRORS=$((ERRORS + 1))
+    else
+      echo "✓ ruff"
+    fi
+  fi
+
+  echo "  tests (pytest)..."
+  if command -v uv &>/dev/null; then
+    if ! uv run pytest 2>&1; then
+      echo "✗ pytest failed"
+      ERRORS=$((ERRORS + 1))
+    else
+      echo "✓ pytest"
+    fi
+  else
+    if ! python -m pytest 2>&1; then
+      echo "✗ pytest failed"
+      ERRORS=$((ERRORS + 1))
+    else
+      echo "✓ pytest"
+    fi
+  fi
+
+  cd "$REPO_ROOT"
+}
+
+if (( TS_ONLY )); then
+  run_ts
+elif (( PY_ONLY )); then
+  run_py
+else
+  run_ts
+  run_py
+fi
+
+if (( ERRORS > 0 )); then
+  echo ""
+  echo "✗ $ERRORS check(s) failed — push blocked"
+  exit 1
+fi
+
+echo ""
+echo "✓ all checks passed"
+
+if (( CHECK_ONLY )); then
+  echo "  (--check mode: skipping push)"
+  exit 0
+fi
+
+echo "  pushing..."
+git push "$@" 2>&1
+echo "✓ pushed"
