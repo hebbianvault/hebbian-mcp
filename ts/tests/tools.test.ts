@@ -1,7 +1,7 @@
 /**
  * tests/tools.test.ts
  *
- * Unit tests for @hebbian/mcp-tenant tool handlers.
+ * Unit tests for @hebbianvault/mcp tool handlers.
  *
  * Tests mock the HebbianClient — no real HTTP calls.
  * Coverage: input validation, happy-path response shaping, error handling

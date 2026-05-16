@@ -12,15 +12,15 @@ The adapter is a thin bearer-auth shim. Your token goes in; the Hebbian API enfo
 
 | Package | Language | Install |
 |---|---|---|
-| `@hebbian/mcp-tenant` | TypeScript / Node.js | `npm install -g @hebbian/mcp-tenant` |
-| `hebbian-mcp-tenant` | Python | `pip install hebbian-mcp-tenant` |
+| `@hebbianvault/mcp` | TypeScript / Node.js | `npm install -g @hebbianvault/mcp` |
+| `hebbianvault-mcp` | Python | `pip install hebbianvault-mcp` |
 
 Both expose the same 8 tools, the same auth flow, and the same token types. Use whichever matches your MCP host.
 
 ## Quick start (TypeScript)
 
 ```bash
-npm install -g @hebbian/mcp-tenant
+npm install -g @hebbianvault/mcp
 ```
 
 Generate a token from your Hebbian integrations page (AI Tools tab → Generate token).
@@ -30,7 +30,7 @@ Generate a token from your Hebbian integrations page (AI Tools tab → Generate 
 ```bash
 claude mcp add hebbian \
   -e HEBBIAN_API_TOKEN=hbn_emp_your_token_here \
-  -- npx -y @hebbian/mcp-tenant
+  -- npx -y @hebbianvault/mcp
 ```
 
 ### Claude Desktop
@@ -42,7 +42,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
   "mcpServers": {
     "hebbian": {
       "command": "npx",
-      "args": ["-y", "@hebbian/mcp-tenant"],
+      "args": ["-y", "@hebbianvault/mcp"],
       "env": {
         "HEBBIAN_API_TOKEN": "hbn_emp_your_token_here"
       }
@@ -60,7 +60,7 @@ Add to `.cursor/mcp.json`:
   "mcpServers": {
     "hebbian": {
       "command": "npx",
-      "args": ["-y", "@hebbian/mcp-tenant"],
+      "args": ["-y", "@hebbianvault/mcp"],
       "env": {
         "HEBBIAN_API_TOKEN": "hbn_emp_your_token_here"
       }
@@ -72,9 +72,9 @@ Add to `.cursor/mcp.json`:
 ## Quick start (Python)
 
 ```bash
-pip install hebbian-mcp-tenant
+pip install hebbianvault-mcp
 # or with uv (preferred)
-uv add hebbian-mcp-tenant
+uv add hebbianvault-mcp
 ```
 
 ```bash
@@ -141,8 +141,8 @@ Sign in at the Hebbian app (link TBD — domain parked), navigate to AI Tools, a
 ## Source layout
 
 ```
-ts/    — TypeScript package (@hebbian/mcp-tenant, npm)
-py/    — Python package (hebbian-mcp-tenant, PyPI)
+ts/    — TypeScript package (@hebbianvault/mcp, npm)
+py/    — Python package (hebbianvault-mcp, PyPI)
 ```
 
 ## Development

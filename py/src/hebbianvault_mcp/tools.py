@@ -1,5 +1,5 @@
 """
-hebbian_mcp_tenant.tools — All 8 Hebbian MCP tool definitions + handlers.
+hebbianvault_mcp.tools — All 8 Hebbian MCP tool definitions + handlers.
 
 Tools are 1:1 with Hebbian API cognitive endpoints (ADR-023).
 Each tool handler takes a HebbianClient and returns a JSON-serialisable string.

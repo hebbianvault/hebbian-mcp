@@ -1,0 +1,27 @@
+# Node
+node_modules/
+dist/
+*.js.map
+*.d.ts.map
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+*.dist-info/
+.venv/
+.uv/
+
+# Test / coverage artifacts
+.coverage
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# IDE
+.vscode/
+.idea/

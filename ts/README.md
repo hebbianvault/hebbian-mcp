@@ -1,4 +1,4 @@
-# @hebbian/mcp-tenant
+# @hebbianvault/mcp
 
 Customer-installable MCP server for the Hebbian tenant brain.
 
@@ -8,7 +8,7 @@ One package, scope-by-token (Employee or Company). Install in Claude Code, Claud
 
 ```bash
 # Install globally (or use npx — no install needed)
-npm install -g @hebbian/mcp-tenant
+npm install -g @hebbianvault/mcp
 ```
 
 Generate a token from your Hebbian integrations page (AI Tools tab → Generate token).
@@ -20,7 +20,7 @@ Generate a token from your Hebbian integrations page (AI Tools tab → Generate 
 ```bash
 claude mcp add hebbian \
   -e HEBBIAN_API_TOKEN=hbn_emp_your_token_here \
-  -- npx -y @hebbian/mcp-tenant
+  -- npx -y @hebbianvault/mcp
 ```
 
 ### Claude Desktop
@@ -32,7 +32,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
   "mcpServers": {
     "hebbian": {
       "command": "npx",
-      "args": ["-y", "@hebbian/mcp-tenant"],
+      "args": ["-y", "@hebbianvault/mcp"],
       "env": {
         "HEBBIAN_API_TOKEN": "hbn_emp_your_token_here"
       }
@@ -50,7 +50,7 @@ Add to `.cursor/mcp.json`:
   "mcpServers": {
     "hebbian": {
       "command": "npx",
-      "args": ["-y", "@hebbian/mcp-tenant"],
+      "args": ["-y", "@hebbianvault/mcp"],
       "env": {
         "HEBBIAN_API_TOKEN": "hbn_emp_your_token_here"
       }
@@ -104,7 +104,7 @@ Token scope is enforced at the API layer (RLS). The MCP is a thin bearer-auth cl
 
 ## Python
 
-A Python sibling package is available as `hebbian-mcp-tenant` on PyPI. Same 8 tools, same auth, same transport. See `packages/mcp-tenant-py/README.md`.
+A Python sibling package is available as `hebbianvault-mcp` on PyPI. Same 8 tools, same auth, same transport. See `packages/mcp-tenant-py/README.md`.
 
 ## Development
 

@@ -123,7 +123,7 @@ export class HebbianClient {
     return {
       Authorization: `Bearer ${this.token}`,
       Accept: "application/json",
-      "User-Agent": "@hebbian/mcp-tenant/0.1.0",
+      "User-Agent": "@hebbianvault/mcp/0.1.0",
     };
   }
 
