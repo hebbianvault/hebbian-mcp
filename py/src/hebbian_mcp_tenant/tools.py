@@ -68,7 +68,10 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "q": {"type": "string", "description": "Search query — natural language or keyword."},
+                "q": {
+                    "type": "string",
+                    "description": "Search query — natural language or keyword.",
+                },
                 "types": {
                     "type": "array",
                     "items": {"type": "string", "enum": sorted(VALID_TYPES)},
@@ -136,10 +139,15 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "start_uuid": {"type": "string", "description": "UUID of the starting node."},
+                "start_uuid": {
+                    "type": "string",
+                    "description": "UUID of the starting node.",
+                },
                 "max_hops": {
                     "type": "number",
-                    "description": f"Max hops to traverse. Default: {DEFAULT_HOPS}. Max: {MAX_HOPS}.",
+                    "description": (
+                        f"Max hops to traverse. Default: {DEFAULT_HOPS}. Max: {MAX_HOPS}."
+                    ),
                     "minimum": 1,
                     "maximum": MAX_HOPS,
                 },
@@ -191,7 +199,9 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
             "properties": {
                 "since": {
                     "type": "string",
-                    "description": "ISO 8601 datetime (e.g. '2026-05-14T09:00:00Z'). Omit for last 24h.",
+                    "description": (
+                        "ISO 8601 datetime (e.g. '2026-05-14T09:00:00Z'). Omit for last 24h."
+                    ),
                 },
                 "limit": {
                     "type": "number",
