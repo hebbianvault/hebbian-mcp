@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="brand/hebbian-logo-256.png" alt="Hebbian" width="256" />
+</p>
+
 # hebbian-mcp
 
 Customer-installable adapter for the Hebbian tenant brain. Connect Claude Code, Claude Desktop, Cursor, and any MCP-compatible agent to your Hebbian workspace.
