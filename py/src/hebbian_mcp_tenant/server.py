@@ -22,13 +22,7 @@ from typing import Any
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
-from mcp.types import (
-    CallToolRequest,
-    ErrorData,
-    ListToolsRequest,
-    TextContent,
-    Tool,
-)
+from mcp.types import TextContent, Tool
 
 from .client import HebbianClient
 from .config import load_config

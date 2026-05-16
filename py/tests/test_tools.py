@@ -28,7 +28,6 @@ from hebbian_mcp_tenant.tools import (
     handle_traverse,
 )
 
-
 # ── Mock client factory ───────────────────────────────────────────────────────
 
 def mock_client(
