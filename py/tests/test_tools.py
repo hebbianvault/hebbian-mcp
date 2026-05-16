@@ -28,7 +28,6 @@ from hebbianvault_mcp.tools import (
     handle_traverse,
 )
 
-
 # ── Mock client factory ───────────────────────────────────────────────────────
 
 def mock_client(
