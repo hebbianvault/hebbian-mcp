@@ -1,13 +1,13 @@
-# hebbian-mcp-tenant (Python)
+# hebbianvault-mcp (Python)
 
-Python sibling of `@hebbian/mcp-tenant`. Customer-installable MCP server for the Hebbian tenant brain. Same 8 tools, same auth, same transport — for Python MCP hosts.
+Python sibling of `@hebbianvault/mcp`. Customer-installable MCP server for the Hebbian tenant brain. Same 8 tools, same auth, same transport — for Python MCP hosts.
 
 ## Quick start
 
 ```bash
-pip install hebbian-mcp-tenant
+pip install hebbianvault-mcp
 # or with uv (preferred)
-uv add hebbian-mcp-tenant
+uv add hebbianvault-mcp
 ```
 
 Generate a token from your Hebbian integrations page (AI Tools tab → Generate token).
@@ -36,7 +36,7 @@ Or write `~/.config/hebbian/mcp-tenant.json`:
 ```python
 import os
 os.environ["HEBBIAN_API_TOKEN"] = "hbn_emp_your_token_here"
-from hebbian_mcp_tenant import create_server
+from hebbianvault_mcp import create_server
 server = create_server()
 # server.run() to start serving over stdio
 ```
@@ -64,7 +64,7 @@ ruff check src/ tests/
 
 ## Node.js version
 
-The canonical package is `@hebbian/mcp-tenant` on npm. This Python sibling has identical tool shapes and auth. Use whichever matches your MCP host environment.
+The canonical package is `@hebbianvault/mcp` on npm. This Python sibling has identical tool shapes and auth. Use whichever matches your MCP host environment.
 
 ## License
 

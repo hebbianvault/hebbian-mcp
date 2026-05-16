@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * @hebbian/mcp-tenant — Customer-installable MCP server for the Hebbian tenant brain.
+ * @hebbianvault/mcp — Customer-installable MCP server for the Hebbian tenant brain.
  *
  * One package, scope-by-token (Employee or Company). Install in Claude Code,
  * Claude Desktop, Cursor, Cowork, or any MCP-compatible agent. Configure with a
@@ -45,7 +45,7 @@ import {
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
-const SERVER_NAME = "@hebbian/mcp-tenant";
+const SERVER_NAME = "@hebbianvault/mcp";
 const SERVER_VERSION = "0.1.0";
 
 // ── All registered tools ───────────────────────────────────────────────────────

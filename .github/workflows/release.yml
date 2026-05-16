@@ -7,7 +7,7 @@ on:
 
 jobs:
   publish-npm:
-    name: Publish @hebbian/mcp-tenant to npm
+    name: Publish @hebbianvault/mcp to npm
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -38,7 +38,7 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   publish-pypi:
-    name: Publish hebbian-mcp-tenant to PyPI
+    name: Publish hebbianvault-mcp to PyPI
     runs-on: ubuntu-latest
     defaults:
       run:

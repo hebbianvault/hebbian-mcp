@@ -3,9 +3,9 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "hebbian-mcp-tenant"
+name = "hebbianvault-mcp"
 version = "0.1.0"
-description = "Customer-installable MCP server for the Hebbian tenant brain (Python). Same 8 tools as the Node.js sibling @hebbian/mcp-tenant."
+description = "Customer-installable MCP server for the Hebbian tenant brain (Python). Same 8 tools as the Node.js sibling @hebbianvault/mcp."
 readme = "README.md"
 license = { text = "Apache-2.0" }
 requires-python = ">=3.11"
@@ -29,10 +29,10 @@ dev = [
 ]
 
 [project.scripts]
-hebbian-mcp = "hebbian_mcp_tenant.server:main"
+hebbian-mcp = "hebbianvault_mcp.server:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/hebbian_mcp_tenant"]
+packages = ["src/hebbianvault_mcp"]
 
 [tool.ruff]
 target-version = "py311"

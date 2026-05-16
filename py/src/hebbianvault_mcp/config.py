@@ -1,5 +1,5 @@
 """
-hebbian_mcp_tenant.config — Configuration loading.
+hebbianvault_mcp.config — Configuration loading.
 
 Auth: bearer token from HEBBIAN_API_TOKEN env var (preferred) or
       HEBBIAN_TOKEN (alternative) or config-file JSON path.

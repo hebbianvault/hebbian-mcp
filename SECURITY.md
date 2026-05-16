@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-The latest published version of `@hebbian/mcp-tenant` (npm) and `hebbian-mcp-tenant` (PyPI) receive security fixes. Older versions are not backported.
+The latest published version of `@hebbianvault/mcp` (npm) and `hebbianvault-mcp` (PyPI) receive security fixes. Older versions are not backported.
 
 ## Reporting a vulnerability
 

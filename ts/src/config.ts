@@ -1,7 +1,7 @@
 /**
  * src/config.ts
  *
- * Configuration loading for @hebbian/mcp-tenant.
+ * Configuration loading for @hebbianvault/mcp.
  *
  * Auth: bearer token from HEBBIAN_API_TOKEN env var (preferred) or
  *       HEBBIAN_TOKEN (alternative) or config-file JSON path.

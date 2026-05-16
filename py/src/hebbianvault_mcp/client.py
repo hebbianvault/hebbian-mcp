@@ -1,5 +1,5 @@
 """
-hebbian_mcp_tenant.client — HTTPS client for the Hebbian API.
+hebbianvault_mcp.client — HTTPS client for the Hebbian API.
 
 - Adds Authorization: Bearer header to every request.
 - Surfaces API errors as HebbianApiError with status_code + error_code + message.
@@ -16,7 +16,7 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-USER_AGENT = "hebbian-mcp-tenant/0.1.0 (Python)"
+USER_AGENT = "hebbianvault-mcp/0.1.0 (Python)"
 
 
 class HebbianApiError(Exception):

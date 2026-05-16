@@ -1,7 +1,7 @@
 """
 tests/test_tools.py
 
-Unit tests for hebbian-mcp-tenant tool handlers.
+Unit tests for hebbianvault-mcp tool handlers.
 
 Tests mock the HebbianClient — no real HTTP calls.
 Coverage: input validation, happy-path response shaping, error handling
@@ -16,8 +16,8 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from hebbian_mcp_tenant.client import HebbianApiError, HebbianClient
-from hebbian_mcp_tenant.tools import (
+from hebbianvault_mcp.client import HebbianApiError, HebbianClient
+from hebbianvault_mcp.tools import (
     handle_ask,
     handle_capture,
     handle_provenance,

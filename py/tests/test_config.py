@@ -1,7 +1,7 @@
 """
 tests/test_config.py
 
-Unit tests for hebbian_mcp_tenant.config — token loading priority logic.
+Unit tests for hebbianvault_mcp.config — token loading priority logic.
 """
 
 from __future__ import annotations
@@ -14,7 +14,7 @@ from unittest.mock import patch
 
 import pytest
 
-from hebbian_mcp_tenant.config import load_config
+from hebbianvault_mcp.config import load_config
 
 
 class TestLoadConfig:

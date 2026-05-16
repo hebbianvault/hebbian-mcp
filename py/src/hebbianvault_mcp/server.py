@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-hebbian_mcp_tenant.server — MCP server entry point.
+hebbianvault_mcp.server — MCP server entry point.
 
 Boots the Hebbian tenant MCP server over stdio transport.
 
 Usage:
-    python -m hebbian_mcp_tenant.server
+    python -m hebbianvault_mcp.server
     hebbian-mcp          # via pyproject.toml [project.scripts]
 
 Auth:
@@ -39,9 +39,9 @@ logging.basicConfig(
     stream=sys.stderr,
     format="%(asctime)s [%(name)s] %(levelname)s %(message)s",
 )
-logger = logging.getLogger("hebbian_mcp_tenant")
+logger = logging.getLogger("hebbianvault_mcp")
 
-SERVER_NAME = "hebbian-mcp-tenant"
+SERVER_NAME = "hebbianvault-mcp"
 SERVER_VERSION = "0.1.0"
 
 
