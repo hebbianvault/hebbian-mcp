@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="https://raw.githubusercontent.com/hebbianvault/hebbian-mcp/main/brand/hebbian-lockup-cyan.png" alt="Hebbian" width="520">
+</p>
+
 # @hebbianvault/mcp
 
 Customer-installable MCP server for the Hebbian tenant brain.

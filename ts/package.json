@@ -19,11 +19,12 @@
     "README.md"
   ],
   "scripts": {
-    "build": "tsc",
+    "build": "tsc && node -e \"const{mkdirSync,cpSync}=require('fs');mkdirSync('dist/assets',{recursive:true});cpSync('src/assets/lockup.txt','dist/assets/lockup.txt')\"",
     "dev": "tsc --watch",
     "test": "node --experimental-vm-modules node_modules/.bin/jest --config=jest.config.cjs tests/",
     "prepublishOnly": "npm run build && npm test",
-    "start": "node dist/index.js"
+    "start": "node dist/index.js",
+    "postinstall": "node scripts/postinstall.mjs || true"
   },
   "keywords": [
     "mcp",
