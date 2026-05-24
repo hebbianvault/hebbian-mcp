@@ -32,6 +32,7 @@ import {
 
 import { loadConfig } from "./config.js";
 import { HebbianClient } from "./client.js";
+import { printBanner } from "./banner.js";
 import {
   HEBBIAN_READ_NODE, handleReadNode,
   HEBBIAN_SEARCH, handleSearch,
@@ -64,6 +65,10 @@ const TOOLS = [
 // ── Boot ───────────────────────────────────────────────────────────────────────
 
 async function main(): Promise<void> {
+  // Print brand banner to STDERR before transport connects.
+  // STDERR only — stdout is the JSON-RPC wire; any write there corrupts the protocol.
+  printBanner();
+
   // Load config early — throw clearly if no token
   const config = loadConfig();
 

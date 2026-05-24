@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="brand/hebbian-logo-256.png" alt="Hebbian" width="256" />
+  <img src="brand/hebbian-lockup-cyan.png" alt="Hebbian" width="520">
 </p>
 
 # hebbian-mcp
