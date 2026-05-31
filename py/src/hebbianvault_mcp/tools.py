@@ -60,7 +60,10 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "q": {"type": "string", "description": "Search query — natural language or keywords."},
+                "q": {
+                    "type": "string",
+                    "description": "Search query — natural language or keywords.",
+                },
                 "domain": {
                     "type": "string",
                     "description": "Optional knowledge-domain filter (e.g. 'Company', 'Compass').",
@@ -141,7 +144,9 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                 "start_uuid": {"type": "string", "description": "UUID of the starting node."},
                 "max_hops": {
                     "type": "number",
-                    "description": f"Max hops to traverse. Default: {DEFAULT_HOPS}. Max: {MAX_HOPS}.",
+                    "description": (
+                        f"Max hops to traverse. Default: {DEFAULT_HOPS}. Max: {MAX_HOPS}."
+                    ),
                     "minimum": 1,
                     "maximum": MAX_HOPS,
                 },
