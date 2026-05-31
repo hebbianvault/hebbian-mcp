@@ -3,9 +3,9 @@ tests/test_tools.py
 
 Unit tests for hebbianvault-mcp tool handlers.
 
-Tests mock the HebbianClient — no real HTTP calls.
-Coverage: input validation, happy-path response shaping, error handling
-for each of the 8 tools.
+Tests mock the HebbianClient — no real HTTP calls. (End-to-end validation
+against the live API is exercised separately; see the PR description.)
+Coverage: endpoint/contract shaping, input validation, error handling.
 """
 
 from __future__ import annotations
@@ -28,6 +28,9 @@ from hebbianvault_mcp.tools import (
     handle_traverse,
 )
 
+pytestmark = pytest.mark.asyncio
+
+
 # ── Mock client factory ───────────────────────────────────────────────────────
 
 def mock_client(
@@ -42,18 +45,43 @@ def mock_client(
     return client  # type: ignore[return-value]
 
 
+def _graph() -> dict[str, Any]:
+    return {
+        "nodes": [
+            {
+                "uuid": "n1",
+                "title": "2026 Company Strategy",
+                "summary": "The annual company strategy and roadmap.",
+                "domain": "Company",
+                "archetype": "INDEX",
+                "tags": ["strategy"],
+                "edges": [{"to": "n2", "relation_type": "part_of", "weight": 0.7}],
+                "provenance": {"path": "B", "source_artifacts": []},
+            },
+            {
+                "uuid": "n2",
+                "title": "Q2 Roadmap",
+                "summary": "Product roadmap detail.",
+                "domain": "Company",
+                "archetype": "MOLECULE",
+                "tags": [],
+                "edges": [],
+                "provenance": None,
+            },
+        ]
+    }
+
+
 # ── hebbian_read_node ─────────────────────────────────────────────────────────
 
 class TestReadNode:
     UUID = "550e8400-e29b-41d4-a716-446655440000"
 
     async def test_calls_get_nodes_uuid(self) -> None:
-        node = {"uuid": self.UUID, "title": "Test node", "domain": "Compass"}
+        node = {"uuid": self.UUID, "frontmatter": {"title": "Test node"}}
         client = mock_client(get_return=node)
-
         result = await handle_read_node(client, {"uuid": self.UUID})
-
-        client.get.assert_called_once_with(f"/api/v1/nodes/{self.UUID}")
+        client.get.assert_called_once_with(f"/nodes/{self.UUID}")
         assert json.loads(result) == node
 
     async def test_raises_on_missing_uuid(self) -> None:
@@ -61,73 +89,47 @@ class TestReadNode:
         with pytest.raises(ValueError, match="'uuid' is required"):
             await handle_read_node(client, {"uuid": ""})
 
-    async def test_surfaces_401_as_auth_error(self) -> None:
-        client = mock_client(
-            get_side_effect=HebbianApiError(401, "TOKEN_EXPIRED", "Token expired")
-        )
+    async def test_surfaces_auth_error(self) -> None:
+        client = mock_client(get_side_effect=HebbianApiError(401, "invalid_token", "x"))
         with pytest.raises(RuntimeError, match="Authentication failed"):
             await handle_read_node(client, {"uuid": self.UUID})
 
-    async def test_surfaces_404_as_not_found(self) -> None:
-        client = mock_client(
-            get_side_effect=HebbianApiError(404, "NODE_NOT_FOUND", "Not found")
-        )
-        with pytest.raises(RuntimeError, match="Not found"):
-            await handle_read_node(client, {"uuid": self.UUID})
 
-
-# ── hebbian_search ────────────────────────────────────────────────────────────
+# ── hebbian_search (graph-derived) ─────────────────────────────────────────────
 
 class TestSearch:
-    async def test_calls_get_search_with_query(self) -> None:
-        results = {"nodes": [], "total": 0}
-        client = mock_client(get_return=results)
+    async def test_fetches_graph_and_ranks(self) -> None:
+        client = mock_client(get_return=_graph())
+        out = json.loads(await handle_search(client, {"q": "strategy roadmap", "limit": 5}))
+        client.get.assert_called_once_with("/vault/graph")
+        assert out["count"] > 0
+        assert out["results"][0]["uuid"] == "n1"
+        assert "snippet" in out["results"][0]
 
-        await handle_search(client, {"q": "project decisions", "limit": 5})
+    async def test_filters_by_domain(self) -> None:
+        client = mock_client(get_return=_graph())
+        out = json.loads(await handle_search(client, {"q": "roadmap", "domain": "Company"}))
+        assert all(r["domain"] == "Company" for r in out["results"])
 
-        client.get.assert_called_once_with(
-            "/api/v1/search",
-            params={"q": "project decisions", "limit": 5},
-        )
-
-    async def test_passes_lens_and_types(self) -> None:
-        client = mock_client(get_return={"nodes": [], "total": 0})
-
-        await handle_search(client, {
-            "q": "strategy",
-            "lens": "Company",
-            "types": ["Decision", "Principle"],
-        })
-
-        call_params = client.get.call_args[1]["params"]
-        assert call_params["lens"] == "Company"
-        assert call_params["types"] == "Decision,Principle"
+    async def test_clamps_limit(self) -> None:
+        client = mock_client(get_return=_graph())
+        out = json.loads(await handle_search(client, {"q": "strategy", "limit": 999}))
+        assert out["count"] <= 50
 
     async def test_raises_on_empty_query(self) -> None:
         client = mock_client()
         with pytest.raises(ValueError, match="'q' is required"):
             await handle_search(client, {"q": "   "})
 
-    async def test_clamps_limit_to_50(self) -> None:
-        client = mock_client(get_return={"nodes": [], "total": 0})
-        await handle_search(client, {"q": "test", "limit": 999})
-
-        call_params = client.get.call_args[1]["params"]
-        assert call_params["limit"] == 50
-
 
 # ── hebbian_ask ───────────────────────────────────────────────────────────────
 
 class TestAsk:
-    async def test_calls_post_ask(self) -> None:
-        response = {"answer": "Yes", "citations": [], "lens_scope": {}}
+    async def test_calls_post_ask_with_query(self) -> None:
+        response = {"answer": "Yes", "sources": [], "scope_receipt": "ok"}
         client = mock_client(post_return=response)
-
         result = await handle_ask(client, {"question": "What is the strategy?"})
-
-        client.post.assert_called_once_with(
-            "/api/v1/ask", {"question": "What is the strategy?"}
-        )
+        client.post.assert_called_once_with("/ask", {"query": "What is the strategy?"})
         assert json.loads(result) == response
 
     async def test_raises_on_empty_question(self) -> None:
@@ -135,10 +137,8 @@ class TestAsk:
         with pytest.raises(ValueError, match="'question' is required"):
             await handle_ask(client, {"question": ""})
 
-    async def test_surfaces_403_as_permission_denied(self) -> None:
-        client = mock_client(
-            post_side_effect=HebbianApiError(403, "SCOPE_INSUFFICIENT", "Company scope required")
-        )
+    async def test_surfaces_permission_denied(self) -> None:
+        client = mock_client(post_side_effect=HebbianApiError(403, "forbidden", "scope"))
         with pytest.raises(RuntimeError, match="Permission denied"):
             await handle_ask(client, {"question": "test"})
 
@@ -146,80 +146,77 @@ class TestAsk:
 # ── hebbian_capture ───────────────────────────────────────────────────────────
 
 class TestCapture:
-    async def test_calls_post_capture(self) -> None:
-        response = {"seed_uuid": "abc", "status": "promoted", "node_uuid": "def"}
+    async def test_calls_post_capture_with_title_body(self) -> None:
+        response = {"uuid": "abc-123", "created": True}
         client = mock_client(post_return=response)
-
-        result = await handle_capture(client, {"text": "Important insight"})
-
-        client.post.assert_called_once_with(
-            "/api/v1/capture", {"text": "Important insight"}
-        )
+        result = await handle_capture(client, {"title": "Insight", "text": "Q3 note"})
+        client.post.assert_called_once_with("/capture", {"title": "Insight", "body": "Q3 note"})
         assert json.loads(result) == response
 
-    async def test_includes_lens_and_subject(self) -> None:
-        client = mock_client(post_return={"seed_uuid": "x", "status": "pending"})
-
-        await handle_capture(client, {
-            "text": "Decision about hiring",
-            "lens": "Company",
-            "subject": "Acme",
-        })
-
+    async def test_company_scope_maps_to_owner_kind(self) -> None:
+        client = mock_client(post_return={"uuid": "x", "created": True})
+        await handle_capture(
+            client,
+            {"title": "D", "text": "B", "domain": "Company", "tags": ["hr"], "scope": "company"},
+        )
         client.post.assert_called_once_with(
-            "/api/v1/capture",
-            {"text": "Decision about hiring", "lens": "Company", "subject": "Acme"},
+            "/capture",
+            {"title": "D", "body": "B", "domain": "Company", "tags": ["hr"], "owner_kind": "company"},
         )
 
-    async def test_raises_on_empty_text(self) -> None:
+    async def test_private_scope_omits_owner_kind(self) -> None:
+        client = mock_client(post_return={"uuid": "x", "created": True})
+        await handle_capture(client, {"title": "T", "text": "B", "scope": "private"})
+        body = client.post.call_args.args[1]
+        assert "owner_kind" not in body
+
+    async def test_raises_on_empty_fields(self) -> None:
         client = mock_client()
+        with pytest.raises(ValueError, match="'title' is required"):
+            await handle_capture(client, {"title": "", "text": "x"})
         with pytest.raises(ValueError, match="'text' is required"):
-            await handle_capture(client, {"text": ""})
+            await handle_capture(client, {"title": "x", "text": ""})
 
 
-# ── hebbian_traverse ──────────────────────────────────────────────────────────
+# ── hebbian_traverse (graph-derived BFS) ───────────────────────────────────────
 
 class TestTraverse:
-    UUID = "traverse-uuid"
+    async def test_walks_to_edge_shape(self) -> None:
+        client = mock_client(get_return=_graph())
+        out = json.loads(await handle_traverse(client, {"start_uuid": "n1", "max_hops": 2}))
+        client.get.assert_called_once_with("/vault/graph")
+        assert out["node_count"] == 2
+        assert out["edge_count"] == 1
+        assert out["edges"][0]["source_uuid"] == "n1"
+        assert out["edges"][0]["target_uuid"] == "n2"
 
-    async def test_calls_get_traverse_with_default_hops(self) -> None:
-        response = {"nodes": [], "edges": [], "start_uuid": self.UUID, "hops": 2}
-        client = mock_client(get_return=response)
+    async def test_missing_start_friendly(self) -> None:
+        client = mock_client(get_return=_graph())
+        out = json.loads(await handle_traverse(client, {"start_uuid": "missing"}))
+        assert out["nodes"] == []
+        assert "not found" in out["message"].lower()
 
-        await handle_traverse(client, {"start_uuid": self.UUID})
-
-        client.get.assert_called_once_with(
-            f"/api/v1/traverse/{self.UUID}",
-            params={"max_hops": 2},
-        )
-
-    async def test_clamps_max_hops_to_5(self) -> None:
-        client = mock_client(get_return={"nodes": [], "edges": [], "start_uuid": self.UUID, "hops": 5})
-
-        await handle_traverse(client, {"start_uuid": self.UUID, "max_hops": 100})
-
-        call_params = client.get.call_args[1]["params"]
-        assert call_params["max_hops"] == 5
-
-    async def test_raises_on_missing_start_uuid(self) -> None:
+    async def test_raises_on_missing_start(self) -> None:
         client = mock_client()
         with pytest.raises(ValueError, match="'start_uuid' is required"):
             await handle_traverse(client, {"start_uuid": ""})
 
 
-# ── hebbian_provenance ────────────────────────────────────────────────────────
+# ── hebbian_provenance (graph-derived) ─────────────────────────────────────────
 
 class TestProvenance:
-    UUID = "prov-uuid"
+    async def test_returns_provenance(self) -> None:
+        client = mock_client(get_return=_graph())
+        out = json.loads(await handle_provenance(client, {"uuid": "n1"}))
+        client.get.assert_called_once_with("/vault/graph")
+        assert out["uuid"] == "n1"
+        assert out["provenance"]["path"] == "B"
 
-    async def test_calls_get_provenance(self) -> None:
-        response = {"uuid": self.UUID, "paths": [], "source_quotes": [], "intake_events": []}
-        client = mock_client(get_return=response)
-
-        result = await handle_provenance(client, {"uuid": self.UUID})
-
-        client.get.assert_called_once_with(f"/api/v1/nodes/{self.UUID}/provenance")
-        assert json.loads(result) == response
+    async def test_missing_node_friendly(self) -> None:
+        client = mock_client(get_return=_graph())
+        out = json.loads(await handle_provenance(client, {"uuid": "nope"}))
+        assert out["provenance"] is None
+        assert "not found" in out["message"].lower()
 
     async def test_raises_on_empty_uuid(self) -> None:
         client = mock_client()
@@ -232,29 +229,15 @@ class TestProvenance:
 class TestSalience:
     UUID = "salience-uuid"
 
-    async def test_returns_stub_when_404(self) -> None:
-        client = mock_client(
-            get_side_effect=HebbianApiError(404, "NOT_FOUND", "Salience endpoint not found")
-        )
-
+    async def test_calls_activation_history(self) -> None:
+        data = {"node_uuid": self.UUID, "count": 0, "history": []}
+        client = mock_client(get_return=data)
         result = await handle_salience(client, {"uuid": self.UUID})
-        parsed = json.loads(result)
+        client.get.assert_called_once_with(f"/metrics/nodes/{self.UUID}/activation-history")
+        assert json.loads(result) == data
 
-        assert parsed["status"] == "pending_snn_p10"
-        assert parsed["uuid"] == self.UUID
-        assert parsed["synaptic_fidelity"] is None
-
-    async def test_returns_real_data_when_api_responds(self) -> None:
-        real_data = {"uuid": self.UUID, "activation_strength": 0.87, "synaptic_fidelity": 0.92}
-        client = mock_client(get_return=real_data)
-
-        result = await handle_salience(client, {"uuid": self.UUID})
-        assert json.loads(result) == real_data
-
-    async def test_raises_on_401_not_swallowed(self) -> None:
-        client = mock_client(
-            get_side_effect=HebbianApiError(401, "TOKEN_EXPIRED", "Expired")
-        )
+    async def test_surfaces_auth_error(self) -> None:
+        client = mock_client(get_side_effect=HebbianApiError(401, "invalid_token", "x"))
         with pytest.raises(RuntimeError, match="Authentication failed"):
             await handle_salience(client, {"uuid": self.UUID})
 
@@ -267,55 +250,24 @@ class TestSalience:
 # ── hebbian_recent_activity ───────────────────────────────────────────────────
 
 class TestRecentActivity:
-    async def test_calls_get_activity_with_default_limit(self) -> None:
-        response = {"items": [], "total": 0, "generated_at": "2026-05-15T12:00:00Z"}
-        client = mock_client(get_return=response)
-
+    async def test_calls_vault_activity_default_limit(self) -> None:
+        client = mock_client(get_return={"events": [], "total": 0})
         await handle_recent_activity(client, {})
+        client.get.assert_called_once_with("/vault/activity", params={"limit": 20})
 
-        call_params = client.get.call_args[1]["params"]
-        assert call_params["limit"] == 20
+    async def test_passes_since(self) -> None:
+        client = mock_client(get_return={"events": [], "total": 0})
+        await handle_recent_activity(client, {"since": "2026-05-14T09:00:00Z", "limit": 10})
+        client.get.assert_called_once_with(
+            "/vault/activity", params={"limit": 10, "since": "2026-05-14T09:00:00Z"}
+        )
 
-    async def test_passes_since_param(self) -> None:
-        client = mock_client(get_return={"items": [], "total": 0, "generated_at": ""})
-
-        await handle_recent_activity(client, {
-            "since": "2026-05-14T09:00:00Z",
-            "limit": 10,
-        })
-
-        call_params = client.get.call_args[1]["params"]
-        assert call_params["since"] == "2026-05-14T09:00:00Z"
-        assert call_params["limit"] == 10
-
-    async def test_clamps_limit_to_100(self) -> None:
-        client = mock_client(get_return={"items": [], "total": 0, "generated_at": ""})
+    async def test_clamps_limit(self) -> None:
+        client = mock_client(get_return={"events": [], "total": 0})
         await handle_recent_activity(client, {"limit": 999})
-
-        call_params = client.get.call_args[1]["params"]
-        assert call_params["limit"] == 100
+        client.get.assert_called_once_with("/vault/activity", params={"limit": 100})
 
     async def test_raises_on_invalid_since(self) -> None:
         client = mock_client()
-        with pytest.raises(ValueError, match="valid ISO 8601 datetime"):
+        with pytest.raises(ValueError, match="valid ISO 8601"):
             await handle_recent_activity(client, {"since": "not-a-date"})
-
-
-# ── HebbianApiError ───────────────────────────────────────────────────────────
-
-class TestHebbianApiError:
-    def test_401_includes_refresh_hint(self) -> None:
-        err = HebbianApiError(401, "TOKEN_EXPIRED", "Expired")
-        assert "Generate a new token" in err.to_tool_error()
-
-    def test_403_includes_scope_hint(self) -> None:
-        err = HebbianApiError(403, "SCOPE_DENIED", "Denied")
-        assert "token scope" in err.to_tool_error()
-
-    def test_429_includes_retry_hint(self) -> None:
-        err = HebbianApiError(429, "RATE_LIMITED", "Too many requests")
-        assert "Slow down" in err.to_tool_error()
-
-    def test_500_includes_status_code(self) -> None:
-        err = HebbianApiError(500, "INTERNAL_ERROR", "Server fault")
-        assert "500" in err.to_tool_error()

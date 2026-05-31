@@ -5,25 +5,35 @@
  *
  * Auth: bearer token from HEBBIAN_API_TOKEN env var (preferred) or
  *       HEBBIAN_TOKEN (alternative) or config-file JSON path.
- * URL:  HEBBIAN_API_URL env var (default: placeholder, apex parked — ADR-023).
+ * URL:  HEBBIAN_API_URL env var (default: the Hebbian SaaS API). Enterprise
+ *       self-host customers override this to point at their own VM.
+ * Tenant: HEBBIAN_TENANT (optional) — only needed when your account belongs to
+ *       more than one Hebbian workspace, to disambiguate which one to act in.
  */
 
 import { readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 
-// TODO(apex): replace placeholder once domain name is locked (ADR-023 URL correction 2026-05-09)
-const DEFAULT_API_URL = "https://api.<saas-apex>";
+// Hebbian SaaS API. Enterprise/self-host customers override with HEBBIAN_API_URL.
+const DEFAULT_API_URL = "https://api.hebbianvault.com";
 
 export interface HebbianConfig {
   /** Base URL of the Hebbian API (configurable for Enterprise self-host). */
   apiUrl: string;
   /** Bearer token for authentication (never log this). */
   token: string;
+  /**
+   * Optional workspace slug. Only required when your account belongs to more
+   * than one Hebbian workspace; sent as the X-Hebbian-Tenant header so the API
+   * knows which workspace you are acting in. Single-workspace accounts can omit.
+   */
+  tenant?: string;
 }
 
 interface ConfigFile {
   api_url?: string;
   token?: string;
+  tenant?: string;
 }
 
 /**
@@ -40,10 +50,13 @@ export function loadConfig(): HebbianConfig {
   // ── API URL ────────────────────────────────────────────────────────────────
   const apiUrl = process.env.HEBBIAN_API_URL ?? DEFAULT_API_URL;
 
+  // ── Tenant (optional) ────────────────────────────────────────────────────────
+  const envTenant = process.env.HEBBIAN_TENANT?.trim() || undefined;
+
   // ── Token (env first) ──────────────────────────────────────────────────────
   const envToken = process.env.HEBBIAN_API_TOKEN ?? process.env.HEBBIAN_TOKEN;
   if (envToken && envToken.length > 0) {
-    return { apiUrl, token: envToken };
+    return { apiUrl, token: envToken, tenant: envTenant };
   }
 
   // ── Token (config file) ────────────────────────────────────────────────────
@@ -54,6 +67,7 @@ export function loadConfig(): HebbianConfig {
       return {
         apiUrl: file.api_url ?? apiUrl,
         token: file.token,
+        tenant: envTenant ?? file.tenant,
       };
     }
   }
@@ -61,7 +75,7 @@ export function loadConfig(): HebbianConfig {
   throw new Error(
     "Hebbian MCP: No API token found. " +
     "Set HEBBIAN_API_TOKEN env var or HEBBIAN_TOKEN env var, " +
-    "or write your token to ~/.config/hebbian/mcp-tenant.json as { \"token\": \"hbn_...\" }. " +
+    "or write your token to ~/.config/hebbian/mcp-tenant.json as { \"token\": \"...\" }. " +
     "Generate a token from the AI Tools tab in your Hebbian integrations page."
   );
 }

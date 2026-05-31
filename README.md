@@ -4,9 +4,9 @@
 
 # hebbian-mcp
 
-Customer-installable adapter for the Hebbian tenant brain. Connect Claude Code, Claude Desktop, Cursor, and any MCP-compatible agent to your Hebbian workspace.
+Customer-installable adapter that connects Claude Code, Claude Desktop, Cursor, and any MCP-compatible agent to your Hebbian workspace.
 
-The adapter is a thin bearer-auth shim. Your token goes in; the Hebbian API enforces what you can read and write. All the logic — typed graph, ranking, fidelity scoring, synthesis — lives server-side. This package is intentionally auditable before you paste a credential.
+The adapter is a thin client. Your token goes in; the Hebbian service decides what you can read and write. This package contains no business logic — it is intentionally small and auditable before you paste a credential.
 
 ## Packages
 
@@ -15,7 +15,7 @@ The adapter is a thin bearer-auth shim. Your token goes in; the Hebbian API enfo
 | `@hebbianvault/mcp` | TypeScript / Node.js | `npm install -g @hebbianvault/mcp` |
 | `hebbianvault-mcp` | Python | `pip install hebbianvault-mcp` |
 
-Both expose the same 8 tools, the same auth flow, and the same token types. Use whichever matches your MCP host.
+Both expose the same 8 tools and the same configuration. Use whichever matches your MCP host.
 
 ## Quick start (TypeScript)
 
@@ -23,13 +23,13 @@ Both expose the same 8 tools, the same auth flow, and the same token types. Use 
 npm install -g @hebbianvault/mcp
 ```
 
-Generate a token from your Hebbian integrations page (AI Tools tab → Generate token).
+Generate a token from your Hebbian integrations page (AI Tools tab → Generate token), then add the server to your MCP host.
 
 ### Claude Code
 
 ```bash
 claude mcp add hebbian \
-  -e HEBBIAN_API_TOKEN=hbn_emp_your_token_here \
+  -e HEBBIAN_API_TOKEN=your_token_here \
   -- npx -y @hebbianvault/mcp
 ```
 
@@ -44,7 +44,7 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
       "command": "npx",
       "args": ["-y", "@hebbianvault/mcp"],
       "env": {
-        "HEBBIAN_API_TOKEN": "hbn_emp_your_token_here"
+        "HEBBIAN_API_TOKEN": "your_token_here"
       }
     }
   }
@@ -62,7 +62,7 @@ Add to `.cursor/mcp.json`:
       "command": "npx",
       "args": ["-y", "@hebbianvault/mcp"],
       "env": {
-        "HEBBIAN_API_TOKEN": "hbn_emp_your_token_here"
+        "HEBBIAN_API_TOKEN": "your_token_here"
       }
     }
   }
@@ -78,38 +78,37 @@ uv add hebbianvault-mcp
 ```
 
 ```bash
-HEBBIAN_API_TOKEN=hbn_emp_your_token_here hebbian-mcp
+HEBBIAN_API_TOKEN=your_token_here hebbian-mcp
 ```
 
-## Token types
+## Token scope
 
-| Token prefix | Scope | Issued from |
-|---|---|---|
-| `hbn_emp_` | Employee — your personal brain | `/integrations?tab=tools` |
-| `hbn_co_` | Company — full org brain (admin only) | `/co/integrations?tab=tools` |
+Your token determines what the adapter can see and do — a personal-workspace token gives access to your own knowledge; a company-workspace token gives access to the shared company workspace (where your role allows). Scope is decided by the Hebbian service, not by this package.
 
-Tokens expire after 90 days. Refresh from the AI Tools tab. Never commit tokens to git.
+Generate, name, and revoke tokens from the AI Tools tab of your Hebbian integrations page. Never commit tokens to git.
 
 ## Tools
 
-| Tool | Description |
+| Tool | What it does |
 |---|---|
-| `hebbian_read_node` | Fetch a single node by UUID (body, frontmatter, provenance) |
-| `hebbian_search` | Full-text + semantic search across vault nodes |
-| `hebbian_ask` | Synthesis Q&A grounded in source_quotes (RAG) |
-| `hebbian_capture` | Capture text as a new seed into the vault |
-| `hebbian_traverse` | Walk the typed graph from a starting node |
-| `hebbian_provenance` | Source trail for a node |
-| `hebbian_salience` | Salience snapshot (no-op until SNN Phase 10) |
-| `hebbian_recent_activity` | Recent brain activity timeline |
+| `hebbian_read_node` | Read a single node by UUID (content, metadata, connected edges) |
+| `hebbian_search` | Find nodes in your workspace matching a query |
+| `hebbian_ask` | Ask a question and get an answer backed by source quotes |
+| `hebbian_capture` | Write a note into your workspace |
+| `hebbian_traverse` | Explore nodes connected to a starting node |
+| `hebbian_provenance` | See where a node's knowledge came from |
+| `hebbian_salience` | See a node's recent activity over time |
+| `hebbian_recent_activity` | Catch up on recent changes in your workspace |
+
+All access control is decided by the Hebbian service; results only ever include what your token is allowed to see.
 
 ## Configuration
 
-### Environment variable
-
-```bash
-export HEBBIAN_API_TOKEN=hbn_emp_your_token_here
-```
+| Variable | Purpose |
+|---|---|
+| `HEBBIAN_API_TOKEN` | Your token (required). `HEBBIAN_TOKEN` is also accepted. |
+| `HEBBIAN_API_URL` | Override the API base URL (Enterprise self-host). Defaults to the Hebbian SaaS API. |
+| `HEBBIAN_TENANT` | Optional workspace slug — only needed if your account belongs to more than one workspace. |
 
 ### Config file (alternative)
 
@@ -117,26 +116,19 @@ Write `~/.config/hebbian/mcp-tenant.json`:
 
 ```json
 {
-  "token": "hbn_emp_your_token_here",
-  "api_url": "https://api.<saas-apex>"
+  "token": "your_token_here"
 }
 ```
 
-Enterprise self-host customers set `HEBBIAN_API_URL` to their VM's API endpoint.
-
-> Note: `api.<saas-apex>` is a placeholder — the Hebbian SaaS domain is not yet published. Enterprise customers configure their own endpoint via `HEBBIAN_API_URL`.
-
-## Onboarding
-
-Sign in at the Hebbian app (link TBD — domain parked), navigate to AI Tools, and generate a tenant token. Paste it into your MCP client config as shown above.
+Enterprise self-host customers add `"api_url": "https://api.your-hebbian-host.example"` (or set `HEBBIAN_API_URL`) to point the adapter at their own deployment.
 
 ## Security
 
-- Tokens are bearer credentials — treat like passwords.
+- Tokens are bearer credentials — treat them like passwords.
 - Never commit tokens to git. Use env vars or a config file outside your repo.
-- Tokens expire after 90 days. A `401 TOKEN_EXPIRED` response means the token needs refreshing.
-- HTTPS-only transport. HTTP is rejected at the API edge.
-- The adapter source is intentionally public so you can audit what runs on your machine before pasting a credential. The API enforces all access control server-side (row-level security by tenant + actor).
+- A `401` response means your token is expired or revoked — generate a new one from the AI Tools tab.
+- HTTPS-only transport.
+- The adapter source is public so you can audit exactly what runs on your machine before pasting a credential. All access control is enforced by the Hebbian service.
 
 ## Source layout
 
@@ -160,7 +152,7 @@ npm test
 
 ```bash
 cd py/
-uv install --dev
+uv venv && uv pip install -e ".[dev]"
 pytest
 ruff check src/ tests/
 ```
@@ -173,4 +165,4 @@ See [CONTRIBUTING.md](CONTRIBUTING.md).
 
 Apache-2.0. See [LICENSE](LICENSE).
 
-The Hebbian API that this adapter connects to is proprietary and closed-source (ADR-017). This adapter package is the open-source reference client.
+The Hebbian service this adapter connects to is proprietary. This adapter is the open-source reference client.

@@ -2,9 +2,9 @@
  * src/tools/recent_activity.ts
  *
  * Tool: hebbian_recent_activity
- * Retrieve recent activity in the tenant brain — brain-mode firings,
- * cross-node editor mutations, new seeds, and quality events.
- * Maps to: GET /api/v1/activity
+ * Retrieve the recent activity timeline for the workspace — new notes,
+ * intakes, and other audited events.
+ * Maps to: GET /vault/activity
  */
 
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
@@ -14,12 +14,11 @@ import { HebbianApiError } from "../client.js";
 export const HEBBIAN_RECENT_ACTIVITY: Tool = {
   name: "hebbian_recent_activity",
   description:
-    "Retrieve recent activity in the Hebbian tenant brain — what the formation " +
-    "pipeline has been doing, which nodes were created or updated, and any quality " +
-    "events. Use this to catch up on what the brain has learned since your last " +
-    "session, or to find recently-created nodes by topic. " +
-    "Returns a reverse-chronological activity timeline matching the /today UI view. " +
-    "The 'since' param accepts an ISO 8601 datetime; omit for the last 24 hours.",
+    "Retrieve recent activity in your Hebbian workspace — which notes were " +
+    "created or updated and other audited events. Use this to catch up on what " +
+    "the workspace has learned since your last session, or to find recently-" +
+    "created nodes. Returns a reverse-chronological activity timeline. " +
+    "The 'since' param accepts an ISO 8601 datetime.",
   inputSchema: {
     type: "object",
     properties: {
@@ -27,7 +26,7 @@ export const HEBBIAN_RECENT_ACTIVITY: Tool = {
         type: "string",
         description:
           "ISO 8601 datetime to retrieve activity from (e.g. '2026-05-14T09:00:00Z'). " +
-          "Omit to get the last 24 hours of activity.",
+          "Omit to get the most recent activity.",
       },
       limit: {
         type: "number",
@@ -67,7 +66,7 @@ export async function handleRecentActivity(
   }
 
   try {
-    const result = await client.get("/api/v1/activity", query);
+    const result = await client.get("/vault/activity", query);
     return JSON.stringify(result, null, 2);
   } catch (err) {
     if (err instanceof HebbianApiError) {

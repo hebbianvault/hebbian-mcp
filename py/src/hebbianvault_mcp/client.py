@@ -16,7 +16,7 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-USER_AGENT = "hebbianvault-mcp/0.1.0 (Python)"
+USER_AGENT = "hebbianvault-mcp/0.2.0 (Python)"
 
 
 class HebbianApiError(Exception):
@@ -57,7 +57,7 @@ class HebbianApiError(Exception):
 class HebbianClient:
     """Thin async HTTP client for the Hebbian API."""
 
-    def __init__(self, api_url: str, token: str) -> None:
+    def __init__(self, api_url: str, token: str, tenant: str | None = None) -> None:
         # Normalise: strip trailing slash
         self._api_url = api_url.rstrip("/")
         self._headers = {
@@ -65,6 +65,10 @@ class HebbianClient:
             "Accept": "application/json",
             "User-Agent": USER_AGENT,
         }
+        # Only sent when the account belongs to more than one workspace; the API
+        # resolves the single-membership case from the token alone.
+        if tenant and tenant.strip():
+            self._headers["X-Hebbian-Tenant"] = tenant.strip()
 
     async def get(
         self,

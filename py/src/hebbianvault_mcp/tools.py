@@ -1,8 +1,13 @@
 """
 hebbianvault_mcp.tools — All 8 Hebbian MCP tool definitions + handlers.
 
-Tools are 1:1 with Hebbian API cognitive endpoints (ADR-023).
 Each tool handler takes a HebbianClient and returns a JSON-serialisable string.
+
+The Hebbian API exposes the workspace as a single scoped graph plus a handful
+of cognitive endpoints. `search`, `traverse`, and `provenance` are presentation
+views over the scoped graph (GET /vault/graph) — the API returns the data, this
+module shapes it. All access control is enforced server-side: the graph only
+ever contains what the caller's token is allowed to see.
 """
 
 from __future__ import annotations
@@ -15,17 +20,6 @@ from typing import Any
 from .client import HebbianApiError, HebbianClient
 
 logger = logging.getLogger(__name__)
-
-# Valid domain/lens values (from knowledge-graph.md)
-VALID_LENSES = frozenset({
-    "Mirror", "Compass", "Axis", "Company", "CRM", "EMAIL", "LEEXI",
-    "Finance", "Oracle",
-})
-
-VALID_TYPES = frozenset({
-    "Observation", "Principle", "Question", "Person", "Event", "Project",
-    "Decision", "Asset", "Signal",
-})
 
 MAX_HOPS = 5
 DEFAULT_HOPS = 2
@@ -41,18 +35,15 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "name": "hebbian_read_node",
         "description": (
-            "Retrieve a single Hebbian vault node by its UUID. Returns the node body, "
-            "frontmatter (domain, archetype, actor, fidelity scores), provenance trail, "
-            "and top related nodes. Use this when you have a specific node ID from a "
-            "previous search or traversal and want to read its full content."
+            "Retrieve a single Hebbian workspace node by its UUID. Returns the node "
+            "body, frontmatter (domain, archetype, actor, title, summary), and the "
+            "edges connecting it to other nodes. Use this when you have a specific "
+            "node ID from a previous search or traversal and want its full content."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
-                "uuid": {
-                    "type": "string",
-                    "description": "The UUID of the node to retrieve.",
-                },
+                "uuid": {"type": "string", "description": "The UUID of the node to retrieve."},
             },
             "required": ["uuid"],
             "additionalProperties": False,
@@ -61,26 +52,18 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "name": "hebbian_search",
         "description": (
-            "Search the Hebbian vault for nodes matching a query. Combines full-text "
-            "and semantic (vector) search. The 'lens' param filters by knowledge domain; "
-            "the 'types' param filters by node archetype."
+            "Search your Hebbian workspace for nodes matching a query. Returns a "
+            "ranked list of nodes with UUID, title, domain, archetype, tags, and a "
+            "snippet. The 'domain' param filters by knowledge area. Results only ever "
+            "include what your token is allowed to see — enforced server-side."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
-                "q": {
+                "q": {"type": "string", "description": "Search query — natural language or keywords."},
+                "domain": {
                     "type": "string",
-                    "description": "Search query — natural language or keyword.",
-                },
-                "types": {
-                    "type": "array",
-                    "items": {"type": "string", "enum": sorted(VALID_TYPES)},
-                    "description": "Optional filter by node archetype.",
-                },
-                "lens": {
-                    "type": "string",
-                    "enum": sorted(VALID_LENSES),
-                    "description": "Optional filter by knowledge lens/domain.",
+                    "description": "Optional knowledge-domain filter (e.g. 'Company', 'Compass').",
                 },
                 "limit": {
                     "type": "number",
@@ -96,8 +79,10 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "name": "hebbian_ask",
         "description": (
-            "Ask a synthesis question grounded in the Hebbian vault. Runs RAG and "
-            "returns an answer with citations. Consumes tenant AI-action budget."
+            "Ask a synthesis question grounded in your Hebbian workspace. Returns an "
+            "answer backed by source quotes plus a scope receipt showing what the "
+            "answer was drawn from. What the answer can draw on is determined by your "
+            "token's scope and enforced server-side. Consumes AI-action budget."
         ),
         "inputSchema": {
             "type": "object",
@@ -111,43 +96,52 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "name": "hebbian_capture",
         "description": (
-            "Capture text into the Hebbian vault as a new seed. Runs quality gates "
-            "and promotes to a graph node if thresholds pass. "
-            "Audited with 'source: mcp' + token name. Consumes AI-action budget."
+            "Capture a note into your Hebbian workspace. Confidential-by-default — "
+            "private to you unless you set scope='company' to contribute it to the "
+            "shared company workspace. Returns the created node UUID. Writes are "
+            "subject to your token's permissions, enforced server-side."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
-                "text": {"type": "string", "description": "Text to capture."},
-                "lens": {
+                "title": {"type": "string", "description": "Short title for the note."},
+                "text": {"type": "string", "description": "Body of the note (Markdown)."},
+                "domain": {
                     "type": "string",
-                    "enum": ["Mirror", "Compass", "Axis", "Company", "CRM"],
-                    "description": "Optional domain routing hint.",
+                    "description": "Optional knowledge-domain hint (e.g. 'Company', 'Compass').",
                 },
-                "subject": {"type": "string", "description": "Optional subject hint."},
+                "tags": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Optional free-form tags.",
+                },
+                "scope": {
+                    "type": "string",
+                    "enum": ["private", "company"],
+                    "description": (
+                        "Where this note lives. 'private' (default) keeps it visible only "
+                        "to you; 'company' contributes it to the shared company workspace."
+                    ),
+                },
             },
-            "required": ["text"],
+            "required": ["title", "text"],
             "additionalProperties": False,
         },
     },
     {
         "name": "hebbian_traverse",
         "description": (
-            "Walk the Hebbian knowledge graph from a starting node, returning connected "
-            "nodes up to N hops away. RLS enforced by token scope."
+            "Walk your Hebbian workspace graph from a starting node, returning "
+            "connected nodes up to N hops away plus the edges between them. Only nodes "
+            "your token may see are returned."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
-                "start_uuid": {
-                    "type": "string",
-                    "description": "UUID of the starting node.",
-                },
+                "start_uuid": {"type": "string", "description": "UUID of the starting node."},
                 "max_hops": {
                     "type": "number",
-                    "description": (
-                        f"Max hops to traverse. Default: {DEFAULT_HOPS}. Max: {MAX_HOPS}."
-                    ),
+                    "description": f"Max hops to traverse. Default: {DEFAULT_HOPS}. Max: {MAX_HOPS}.",
                     "minimum": 1,
                     "maximum": MAX_HOPS,
                 },
@@ -159,8 +153,8 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "name": "hebbian_provenance",
         "description": (
-            "Retrieve the provenance trail for a vault node — source_quotes, "
-            "source_external_ids, intake events, and quality-gate history."
+            "Retrieve the provenance trail for a workspace node — where the knowledge "
+            "came from. Returns nothing if the node is outside your token's scope."
         ),
         "inputSchema": {
             "type": "object",
@@ -174,9 +168,9 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "name": "hebbian_salience",
         "description": (
-            "Retrieve the salience snapshot for a vault node (activation, synaptic "
-            "fidelity, reinforcement signal). NOTE: Returns placeholder data until "
-            "SNN Phase 10 ships."
+            "Retrieve the salience history for a workspace node — a timeline of how "
+            "often and how recently it has been surfacing. Returns an empty history "
+            "when a node has no recorded activity yet."
         ),
         "inputSchema": {
             "type": "object",
@@ -190,18 +184,16 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     {
         "name": "hebbian_recent_activity",
         "description": (
-            "Retrieve recent activity in the tenant brain — brain-mode firings, "
-            "mutations, new seeds, and quality events. The 'since' param accepts "
-            "an ISO 8601 datetime; omit for the last 24 hours."
+            "Retrieve recent activity in your Hebbian workspace — which notes were "
+            "created or updated and other audited events. The 'since' param accepts "
+            "an ISO 8601 datetime."
         ),
         "inputSchema": {
             "type": "object",
             "properties": {
                 "since": {
                     "type": "string",
-                    "description": (
-                        "ISO 8601 datetime (e.g. '2026-05-14T09:00:00Z'). Omit for last 24h."
-                    ),
+                    "description": "ISO 8601 datetime (e.g. '2026-05-14T09:00:00Z').",
                 },
                 "limit": {
                     "type": "number",
@@ -217,121 +209,270 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
 ]
 
 
+# ── Graph helpers (shared by search / traverse / provenance) ──────────────────
+
+async def _fetch_graph(client: HebbianClient) -> list[dict[str, Any]]:
+    """Fetch the full scoped workspace graph for the current token."""
+    resp = await client.get("/vault/graph")
+    nodes = resp.get("nodes") if isinstance(resp, dict) else None
+    return nodes if isinstance(nodes, list) else []
+
+
+def _node_haystack(node: dict[str, Any]) -> str:
+    tags = node.get("tags") or []
+    parts = [
+        node.get("title"),
+        node.get("summary"),
+        node.get("detail"),
+        node.get("domain"),
+        node.get("archetype"),
+        *(tags if isinstance(tags, list) else []),
+    ]
+    return " \n ".join(str(p) for p in parts if p).lower()
+
+
+def _score(node: dict[str, Any], terms: list[str]) -> int:
+    if not terms:
+        return 0
+    hay = _node_haystack(node)
+    title = str(node.get("title") or "").lower()
+    score = 0
+    for t in terms:
+        if not t:
+            continue
+        if t in title:
+            score += 3
+        elif t in hay:
+            score += 1
+    return score
+
+
+def _summarise(node: dict[str, Any]) -> dict[str, Any]:
+    snippet = str(node.get("summary") or node.get("detail") or "")[:280]
+    return {
+        "uuid": node.get("uuid"),
+        "title": node.get("title"),
+        "domain": node.get("domain"),
+        "archetype": node.get("archetype"),
+        "tags": node.get("tags") or [],
+        "snippet": snippet,
+    }
+
+
+def _normalise_edge(edge: dict[str, Any], owner_uuid: str) -> dict[str, Any]:
+    """Normalise an edge owned by ``owner_uuid`` to (source, target, relation, weight).
+
+    /vault/graph emits ``{ to, relation_type, weight }`` (adjacency form);
+    /nodes/:uuid emits ``{ source_uuid, target_uuid }``. Tolerate both.
+    """
+    if isinstance(edge.get("to"), str):
+        return {
+            "source": owner_uuid,
+            "target": edge["to"],
+            "relation": edge.get("relation_type"),
+            "weight": edge.get("weight"),
+        }
+    return {
+        "source": edge.get("source_uuid") or owner_uuid,
+        "target": edge.get("target_uuid") or owner_uuid,
+        "relation": edge.get("relation_type"),
+        "weight": edge.get("weight"),
+    }
+
+
 # ── Tool handlers ─────────────────────────────────────────────────────────────
 
 async def handle_read_node(client: HebbianClient, args: dict[str, Any]) -> str:
     """Fetch a single node by UUID."""
     uuid = _require_str(args, "uuid")
     try:
-        node = await client.get(f"/api/v1/nodes/{uuid}")
+        node = await client.get(f"/nodes/{uuid}")
         return json.dumps(node, indent=2)
     except HebbianApiError as exc:
         raise RuntimeError(exc.to_tool_error()) from exc
 
 
 async def handle_search(client: HebbianClient, args: dict[str, Any]) -> str:
-    """Full-text + semantic search."""
+    """Search the scoped workspace graph and rank matches."""
     q = _require_str(args, "q")
-
-    params: dict[str, Any] = {
-        "q": q,
-        "limit": min(max(1, int(args.get("limit", DEFAULT_SEARCH_LIMIT))), MAX_SEARCH_LIMIT),
-    }
-    if lens := args.get("lens"):
-        params["lens"] = str(lens)
-    if types := args.get("types"):
-        if isinstance(types, list):
-            params["types"] = ",".join(str(t) for t in types)
+    limit = min(max(1, int(args.get("limit", DEFAULT_SEARCH_LIMIT))), MAX_SEARCH_LIMIT)
+    domain = args.get("domain")
+    terms = [t for t in q.lower().split() if t]
 
     try:
-        results = await client.get("/api/v1/search", params=params)
-        return json.dumps(results, indent=2)
+        nodes = await _fetch_graph(client)
     except HebbianApiError as exc:
         raise RuntimeError(exc.to_tool_error()) from exc
 
+    if domain:
+        d = str(domain).lower()
+        nodes = [n for n in nodes if str(n.get("domain") or "").lower() == d]
+
+    ranked = sorted(
+        ((n, _score(n, terms)) for n in nodes),
+        key=lambda x: x[1],
+        reverse=True,
+    )
+    results = [_summarise(n) for n, s in ranked if s > 0][:limit]
+    return json.dumps(
+        {"query": q, "domain": domain, "count": len(results), "results": results},
+        indent=2,
+    )
+
 
 async def handle_ask(client: HebbianClient, args: dict[str, Any]) -> str:
-    """Synthesis Q&A."""
+    """Synthesis Q&A grounded in the workspace, returned with source quotes."""
     question = _require_str(args, "question")
     try:
-        result = await client.post("/api/v1/ask", {"question": question})
+        # API contract: the request field is `query`.
+        result = await client.post("/ask", {"query": question})
         return json.dumps(result, indent=2)
     except HebbianApiError as exc:
         raise RuntimeError(exc.to_tool_error()) from exc
 
 
 async def handle_capture(client: HebbianClient, args: dict[str, Any]) -> str:
-    """Capture text as a new seed."""
+    """Write a note into the workspace (confidential-by-default)."""
+    title = _require_str(args, "title")
     text = _require_str(args, "text")
-    body: dict[str, str] = {"text": text}
-    if lens := args.get("lens"):
-        body["lens"] = str(lens)
-    if subject := args.get("subject"):
-        body["subject"] = str(subject)
+    body: dict[str, Any] = {"title": title, "body": text}
+    if domain := args.get("domain"):
+        body["domain"] = str(domain)
+    if tags := args.get("tags"):
+        if isinstance(tags, list) and tags:
+            body["tags"] = [str(t) for t in tags]
+    # owner_kind defaults to employee-private at the API; only send 'company'
+    # when the caller explicitly opts in.
+    if args.get("scope") == "company":
+        body["owner_kind"] = "company"
     try:
-        result = await client.post("/api/v1/capture", body)
+        result = await client.post("/capture", body)
         return json.dumps(result, indent=2)
     except HebbianApiError as exc:
         raise RuntimeError(exc.to_tool_error()) from exc
 
 
 async def handle_traverse(client: HebbianClient, args: dict[str, Any]) -> str:
-    """Graph traversal from a starting node."""
-    start_uuid = _require_str(args, "start_uuid")
+    """Breadth-first walk over the scoped graph from a starting node."""
+    start = _require_str(args, "start_uuid")
     hops = min(max(1, int(args.get("max_hops", DEFAULT_HOPS))), MAX_HOPS)
+
     try:
-        result = await client.get(
-            f"/api/v1/traverse/{start_uuid}",
-            params={"max_hops": hops},
-        )
-        return json.dumps(result, indent=2)
+        nodes = await _fetch_graph(client)
     except HebbianApiError as exc:
         raise RuntimeError(exc.to_tool_error()) from exc
+
+    by_uuid = {n.get("uuid"): n for n in nodes if n.get("uuid")}
+    if start not in by_uuid:
+        return json.dumps(
+            {
+                "start_uuid": start,
+                "message": (
+                    "Start node not found in the visible workspace graph. It may not "
+                    "exist or may be outside your token's scope."
+                ),
+                "nodes": [],
+                "edges": [],
+            },
+            indent=2,
+        )
+
+    visited = {start}
+    collected: list[dict[str, Any]] = []
+    edge_seen: set[str] = set()
+    frontier = [start]
+
+    for _ in range(hops):
+        nxt: list[str] = []
+        for uuid in frontier:
+            node = by_uuid.get(uuid)
+            edges = node.get("edges") if node else None
+            if not isinstance(edges, list):
+                continue
+            for edge in edges:
+                e = _normalise_edge(edge, uuid)
+                src, tgt = e["source"], e["target"]
+                neighbour = tgt if src == uuid else src
+                key = f"{src}->{tgt}:{e['relation'] or ''}"
+                if key not in edge_seen:
+                    edge_seen.add(key)
+                    collected.append(
+                        {
+                            "source_uuid": src,
+                            "target_uuid": tgt,
+                            "relation_type": e["relation"],
+                            "weight": e["weight"],
+                        }
+                    )
+                if neighbour and neighbour not in visited and neighbour in by_uuid:
+                    visited.add(neighbour)
+                    nxt.append(neighbour)
+        frontier = nxt
+        if not frontier:
+            break
+
+    result_nodes = [_summarise(by_uuid[u]) for u in visited if u in by_uuid]
+    return json.dumps(
+        {
+            "start_uuid": start,
+            "max_hops": hops,
+            "node_count": len(result_nodes),
+            "edge_count": len(collected),
+            "nodes": result_nodes,
+            "edges": collected,
+        },
+        indent=2,
+    )
 
 
 async def handle_provenance(client: HebbianClient, args: dict[str, Any]) -> str:
-    """Provenance trail for a node."""
+    """Return a node's provenance from the scoped graph."""
     uuid = _require_str(args, "uuid")
     try:
-        result = await client.get(f"/api/v1/nodes/{uuid}/provenance")
-        return json.dumps(result, indent=2)
+        nodes = await _fetch_graph(client)
     except HebbianApiError as exc:
         raise RuntimeError(exc.to_tool_error()) from exc
 
+    node = next((n for n in nodes if n.get("uuid") == uuid), None)
+    if node is None:
+        return json.dumps(
+            {
+                "uuid": uuid,
+                "message": (
+                    "Node not found in the visible workspace graph. It may not exist "
+                    "or may be outside your token's scope."
+                ),
+                "provenance": None,
+            },
+            indent=2,
+        )
+    return json.dumps(
+        {
+            "uuid": node.get("uuid"),
+            "title": node.get("title"),
+            "domain": node.get("domain"),
+            "provenance": node.get("provenance"),
+        },
+        indent=2,
+    )
+
 
 async def handle_salience(client: HebbianClient, args: dict[str, Any]) -> str:
-    """Salience snapshot — no-op until SNN P10."""
+    """Salience/activity history for a node."""
     uuid = _require_str(args, "uuid")
     try:
-        result = await client.get(f"/api/v1/nodes/{uuid}/salience")
+        result = await client.get(f"/metrics/nodes/{uuid}/activation-history")
         return json.dumps(result, indent=2)
     except HebbianApiError as exc:
-        if exc.status_code == 404:
-            # SNN not yet live — return stub
-            stub = {
-                "uuid": uuid,
-                "status": "pending_snn_p10",
-                "message": (
-                    "Salience data is not yet available. The SNN reinforcement layer "
-                    "(Phase 10) has not shipped yet. This tool will return real activation "
-                    "and fidelity values once SNN P10 is live."
-                ),
-                "fidelity_check_score": None,
-                "synaptic_fidelity": None,
-                "activation_strength": None,
-                "signal": None,
-            }
-            return json.dumps(stub, indent=2)
         raise RuntimeError(exc.to_tool_error()) from exc
 
 
 async def handle_recent_activity(client: HebbianClient, args: dict[str, Any]) -> str:
-    """Recent brain activity timeline."""
+    """Recent workspace activity timeline."""
     params: dict[str, Any] = {
         "limit": min(max(1, int(args.get("limit", DEFAULT_ACTIVITY_LIMIT))), MAX_ACTIVITY_LIMIT),
     }
     if since := args.get("since"):
-        # Validate ISO 8601 format
         try:
             datetime.fromisoformat(str(since).replace("Z", "+00:00"))
         except ValueError as exc:
@@ -341,7 +482,7 @@ async def handle_recent_activity(client: HebbianClient, args: dict[str, Any]) ->
         params["since"] = str(since)
 
     try:
-        result = await client.get("/api/v1/activity", params=params)
+        result = await client.get("/vault/activity", params=params)
         return json.dumps(result, indent=2)
     except HebbianApiError as exc:
         raise RuntimeError(exc.to_tool_error()) from exc
