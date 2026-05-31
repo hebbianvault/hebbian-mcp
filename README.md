@@ -4,9 +4,27 @@
 
 # hebbian-mcp
 
+[![npm](https://img.shields.io/npm/v/@hebbianvault/mcp?logo=npm)](https://www.npmjs.com/package/@hebbianvault/mcp)
+[![PyPI](https://img.shields.io/pypi/v/hebbianvault-mcp?logo=pypi&logoColor=white)](https://pypi.org/project/hebbianvault-mcp/)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
+
 Customer-installable adapter that connects Claude Code, Claude Desktop, Cursor, and any MCP-compatible agent to your Hebbian workspace.
 
 The adapter is a thin client. Your token goes in; the Hebbian service decides what you can read and write. This package contains no business logic — it is intentionally small and auditable before you paste a credential.
+
+## Install
+
+Both packages are published and expose the same 8 tools and the same configuration — use whichever matches your MCP host.
+
+```bash
+# Node.js (npm) — run directly, no global install needed
+npx @hebbianvault/mcp
+
+# Python (PyPI)
+pip install hebbianvault-mcp   # or: uv pip install hebbianvault-mcp
+```
+
+See [Quick start (TypeScript)](#quick-start-typescript) and [Quick start (Python)](#quick-start-python) below for adding the server to your MCP host and generating a token.
 
 ## Packages
 
