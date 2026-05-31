@@ -9,18 +9,18 @@
  * Auth: set HEBBIAN_API_TOKEN (or HEBBIAN_TOKEN) env var, or write a config
  * file at ~/.config/hebbian/mcp-tenant.json with { "token": "hbn_..." }.
  *
- * 8 tools (ADR-023):
+ * 8 tools:
  *   hebbian_read_node       — fetch a node by UUID
- *   hebbian_search          — search vault nodes
- *   hebbian_ask             — synthesis Q&A grounded in source_quotes
- *   hebbian_capture         — capture text as a new seed into the vault
- *   hebbian_traverse        — walk the typed graph from a starting node
+ *   hebbian_search          — search the workspace for matching nodes
+ *   hebbian_ask             — synthesis Q&A returned with source quotes
+ *   hebbian_capture         — write a note into the workspace
+ *   hebbian_traverse        — walk the graph from a starting node
  *   hebbian_provenance      — source trail for a node
- *   hebbian_salience        — salience snapshot (no-op until SNN P10)
- *   hebbian_recent_activity — recent brain activity timeline
+ *   hebbian_salience        — salience/activity history for a node
+ *   hebbian_recent_activity — recent workspace activity timeline
  *
- * Token scope enforced at API layer (RLS). Employee-scope tokens cannot read
- * Company-scoped nodes; Company-scope tokens can. See ADR-025 (RBAC model).
+ * All access control is enforced server-side by the API. What a token can
+ * read and write is determined by its scope; this package is a thin client.
  */
 
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
@@ -47,7 +47,7 @@ import {
 // ── Constants ──────────────────────────────────────────────────────────────────
 
 const SERVER_NAME = "@hebbianvault/mcp";
-const SERVER_VERSION = "0.1.0";
+const SERVER_VERSION = "0.2.0";
 
 // ── All registered tools ───────────────────────────────────────────────────────
 
@@ -72,7 +72,7 @@ async function main(): Promise<void> {
   // Load config early — throw clearly if no token
   const config = loadConfig();
 
-  const client = new HebbianClient(config.apiUrl, config.token);
+  const client = new HebbianClient(config.apiUrl, config.token, config.tenant);
 
   const server = new Server(
     { name: SERVER_NAME, version: SERVER_VERSION },
@@ -100,8 +100,7 @@ async function main(): Promise<void> {
         case "hebbian_search":
           result = await handleSearch(client, args as {
             q: string;
-            types?: string[];
-            lens?: string;
+            domain?: string;
             limit?: number;
           });
           break;
@@ -110,9 +109,11 @@ async function main(): Promise<void> {
           break;
         case "hebbian_capture":
           result = await handleCapture(client, args as {
+            title: string;
             text: string;
-            lens?: string;
-            subject?: string;
+            domain?: string;
+            tags?: string[];
+            scope?: "private" | "company";
           });
           break;
         case "hebbian_traverse":

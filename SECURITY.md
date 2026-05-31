@@ -30,6 +30,6 @@ This repo covers the adapter packages only. Vulnerabilities in the Hebbian API (
 
 ## Token security
 
-Tenant tokens (`hbn_emp_*`, `hbn_co_*`) are bearer credentials. If you believe a token has been exposed, rotate it immediately from the Hebbian AI Tools tab. Tokens expire after 90 days.
+Workspace tokens are bearer credentials. If you believe a token has been exposed, rotate it immediately from the Hebbian AI Tools tab.
 
 Never commit tokens to git. The adapter reads tokens from environment variables (`HEBBIAN_API_TOKEN`) or a config file (`~/.config/hebbian/mcp-tenant.json`) that should be outside any git repository.

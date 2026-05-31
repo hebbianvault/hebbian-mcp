@@ -3,7 +3,9 @@ hebbianvault_mcp.config — Configuration loading.
 
 Auth: bearer token from HEBBIAN_API_TOKEN env var (preferred) or
       HEBBIAN_TOKEN (alternative) or config-file JSON path.
-URL:  HEBBIAN_API_URL env var (default: placeholder, apex parked — ADR-023).
+URL:  HEBBIAN_API_URL env var (default: the Hebbian SaaS API).
+Tenant: HEBBIAN_TENANT (optional) — only needed when your account belongs to
+      more than one Hebbian workspace.
 """
 
 from __future__ import annotations
@@ -16,8 +18,8 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-# TODO(apex): replace placeholder once domain name is locked (ADR-023 URL correction 2026-05-09)
-DEFAULT_API_URL = "https://api.<saas-apex>"
+# Hebbian SaaS API. Enterprise/self-host customers override with HEBBIAN_API_URL.
+DEFAULT_API_URL = "https://api.hebbianvault.com"
 
 
 @dataclass(frozen=True)
@@ -29,6 +31,9 @@ class HebbianConfig:
 
     token: str
     """Bearer token for authentication. Never log this value."""
+
+    tenant: str | None = None
+    """Optional workspace slug; sent as X-Hebbian-Tenant when set."""
 
 
 def load_config() -> HebbianConfig:
@@ -44,11 +49,12 @@ def load_config() -> HebbianConfig:
         RuntimeError: if no token can be resolved.
     """
     api_url = os.environ.get("HEBBIAN_API_URL", DEFAULT_API_URL)
+    env_tenant = (os.environ.get("HEBBIAN_TENANT") or "").strip() or None
 
     # ── Token from env ─────────────────────────────────────────────────────────
     env_token = os.environ.get("HEBBIAN_API_TOKEN") or os.environ.get("HEBBIAN_TOKEN")
     if env_token:
-        return HebbianConfig(api_url=api_url, token=env_token)
+        return HebbianConfig(api_url=api_url, token=env_token, tenant=env_tenant)
 
     # ── Token from config file ─────────────────────────────────────────────────
     config_path = _resolve_config_path()
@@ -58,13 +64,14 @@ def load_config() -> HebbianConfig:
             return HebbianConfig(
                 api_url=file_cfg.get("api_url", api_url),
                 token=file_cfg["token"],
+                tenant=env_tenant or file_cfg.get("tenant"),
             )
 
     raise RuntimeError(
         "Hebbian MCP: No API token found. "
         "Set HEBBIAN_API_TOKEN env var or HEBBIAN_TOKEN env var, "
         "or write your token to ~/.config/hebbian/mcp-tenant.json as "
-        '{"token": "hbn_..."}. '
+        '{"token": "..."}. '
         "Generate a token from the AI Tools tab in your Hebbian integrations page."
     )
 

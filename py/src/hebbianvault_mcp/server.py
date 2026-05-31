@@ -46,7 +46,7 @@ def create_server() -> Server:
     Call server.run() or use as an async context to start serving.
     """
     config = load_config()
-    client = HebbianClient(api_url=config.api_url, token=config.token)
+    client = HebbianClient(api_url=config.api_url, token=config.token, tenant=config.tenant)
 
     app = Server(SERVER_NAME)
 

@@ -2,8 +2,8 @@
  * src/tools/read_node.ts
  *
  * Tool: hebbian_read_node
- * Fetches a single node by UUID — body, frontmatter, provenance, related nodes.
- * Maps to: GET /api/v1/nodes/:uuid
+ * Fetches a single node by UUID — body, frontmatter, and connected edges.
+ * Maps to: GET /nodes/:uuid
  */
 
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
@@ -13,9 +13,9 @@ import { HebbianApiError } from "../client.js";
 export const HEBBIAN_READ_NODE: Tool = {
   name: "hebbian_read_node",
   description:
-    "Retrieve a single Hebbian vault node by its UUID. Returns the node body, " +
-    "frontmatter (domain, archetype, actor, fidelity scores), provenance trail, " +
-    "and top related nodes. Use this when you have a specific node ID from a " +
+    "Retrieve a single Hebbian workspace node by its UUID. Returns the node body, " +
+    "frontmatter (domain, archetype, actor, title, summary), and the edges that " +
+    "connect it to other nodes. Use this when you have a specific node ID from a " +
     "previous search or traversal and want to read its full content.",
   inputSchema: {
     type: "object",
@@ -48,7 +48,7 @@ export async function handleReadNode(
 
   try {
     const node = await client.get(
-      `/api/v1/nodes/${encodeURIComponent(uuid.trim())}`,
+      `/nodes/${encodeURIComponent(uuid.trim())}`,
     );
     return JSON.stringify(node, null, 2);
   } catch (err) {

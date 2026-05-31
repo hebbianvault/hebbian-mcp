@@ -57,11 +57,13 @@ interface ApiErrorBody {
 export class HebbianClient {
   private readonly apiUrl: string;
   private readonly token: string;
+  private readonly tenant?: string;
 
-  constructor(apiUrl: string, token: string) {
+  constructor(apiUrl: string, token: string, tenant?: string) {
     // Normalise: strip trailing slash
     this.apiUrl = apiUrl.replace(/\/+$/, "");
     this.token = token;
+    this.tenant = tenant && tenant.trim().length > 0 ? tenant.trim() : undefined;
   }
 
   /**
@@ -120,11 +122,17 @@ export class HebbianClient {
 
   /** Standard request headers including bearer auth. */
   private headers(): Record<string, string> {
-    return {
+    const h: Record<string, string> = {
       Authorization: `Bearer ${this.token}`,
       Accept: "application/json",
-      "User-Agent": "@hebbianvault/mcp/0.1.0",
+      "User-Agent": "@hebbianvault/mcp/0.2.0",
     };
+    // Only sent when the caller's account belongs to more than one workspace.
+    // The API resolves the single-membership case from the token alone.
+    if (this.tenant) {
+      h["X-Hebbian-Tenant"] = this.tenant;
+    }
+    return h;
   }
 
   /**

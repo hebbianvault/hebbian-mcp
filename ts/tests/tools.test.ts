@@ -3,12 +3,12 @@
  *
  * Unit tests for @hebbianvault/mcp tool handlers.
  *
- * Tests mock the HebbianClient — no real HTTP calls.
- * Coverage: input validation, happy-path response shaping, error handling
- * for each of the 8 tools.
+ * Tests mock the HebbianClient — no real HTTP calls. (End-to-end validation
+ * against the live API is exercised separately; see the PR description.)
+ * Coverage: input validation, endpoint/contract shaping, error handling.
  */
 
-import { jest, describe, test, expect, beforeEach } from "@jest/globals";
+import { jest, describe, test, expect } from "@jest/globals";
 import type { HebbianClient } from "../src/client.js";
 import { HebbianApiError } from "../src/client.js";
 import { handleReadNode } from "../src/tools/read_node.js";
@@ -32,18 +32,46 @@ function mockClient(overrides?: {
   } as unknown as HebbianClient;
 }
 
+// Sample /vault/graph payload used by the graph-derived tools.
+function graph() {
+  return {
+    nodes: [
+      {
+        uuid: "n1",
+        title: "2026 Company Strategy",
+        summary: "The annual company strategy and roadmap.",
+        domain: "Company",
+        archetype: "INDEX",
+        tags: ["strategy"],
+        edges: [{ to: "n2", relation_type: "part_of", weight: 0.7 }],
+        provenance: { path: "B", source_artifacts: [] },
+      },
+      {
+        uuid: "n2",
+        title: "Q2 Roadmap",
+        summary: "Product roadmap detail.",
+        domain: "Company",
+        archetype: "MOLECULE",
+        tags: [],
+        edges: [],
+        provenance: null,
+      },
+    ],
+  };
+}
+
 // ── hebbian_read_node ─────────────────────────────────────────────────────────
 
 describe("hebbian_read_node", () => {
   const UUID = "550e8400-e29b-41d4-a716-446655440000";
 
-  test("calls GET /api/v1/nodes/:uuid", async () => {
-    const node = { uuid: UUID, title: "Test node", domain: "Compass" };
+  test("calls GET /nodes/:uuid", async () => {
+    const node = { uuid: UUID, frontmatter: { title: "Test node" } };
     const client = mockClient({ get: jest.fn().mockResolvedValue(node) });
 
     const result = await handleReadNode(client, { uuid: UUID });
 
-    expect(client.get).toHaveBeenCalledWith(`/api/v1/nodes/${UUID}`);
+    expect(client.get).toHaveBeenCalledWith(`/nodes/${UUID}`);
     expect(JSON.parse(result)).toEqual(node);
   });
 
@@ -52,89 +80,65 @@ describe("hebbian_read_node", () => {
     await expect(handleReadNode(client, { uuid: "" })).rejects.toThrow("uuid is required");
   });
 
-  test("surfaces HebbianApiError.toToolError() on 401", async () => {
+  test("surfaces auth error on 401", async () => {
     const client = mockClient({
-      get: jest.fn().mockRejectedValue(
-        new HebbianApiError(401, "TOKEN_EXPIRED", "Token has expired"),
-      ),
+      get: jest.fn().mockRejectedValue(new HebbianApiError(401, "invalid_token", "expired")),
     });
-
-    await expect(handleReadNode(client, { uuid: UUID })).rejects.toThrow(
-      "Authentication failed",
-    );
+    await expect(handleReadNode(client, { uuid: UUID })).rejects.toThrow("Authentication failed");
   });
 
-  test("surfaces HebbianApiError.toToolError() on 404", async () => {
+  test("surfaces not-found on 404", async () => {
     const client = mockClient({
-      get: jest.fn().mockRejectedValue(
-        new HebbianApiError(404, "NODE_NOT_FOUND", "Node not found"),
-      ),
+      get: jest.fn().mockRejectedValue(new HebbianApiError(404, "not_found", "no node")),
     });
-
-    await expect(handleReadNode(client, { uuid: UUID })).rejects.toThrow(
-      "Not found",
-    );
+    await expect(handleReadNode(client, { uuid: UUID })).rejects.toThrow("Not found");
   });
 });
 
-// ── hebbian_search ────────────────────────────────────────────────────────────
+// ── hebbian_search (graph-derived) ─────────────────────────────────────────────
 
 describe("hebbian_search", () => {
-  test("calls GET /api/v1/search with query params", async () => {
-    const results = { nodes: [], total: 0 };
-    const client = mockClient({ get: jest.fn().mockResolvedValue(results) });
+  test("fetches /vault/graph and ranks results", async () => {
+    const get = jest.fn().mockResolvedValue(graph());
+    const client = mockClient({ get });
 
-    await handleSearch(client, { q: "project decisions", limit: 5 });
+    const out = JSON.parse(await handleSearch(client, { q: "strategy roadmap", limit: 5 }));
 
-    expect(client.get).toHaveBeenCalledWith("/api/v1/search", expect.objectContaining({
-      q: "project decisions",
-      limit: 5,
-    }));
+    expect(get).toHaveBeenCalledWith("/vault/graph");
+    expect(out.count).toBeGreaterThan(0);
+    expect(out.results[0].uuid).toBe("n1"); // title match outranks body match
+    expect(out.results[0]).toHaveProperty("snippet");
   });
 
-  test("passes lens and types when provided", async () => {
-    const client = mockClient({ get: jest.fn().mockResolvedValue({ nodes: [], total: 0 }) });
+  test("filters by domain", async () => {
+    const client = mockClient({ get: jest.fn().mockResolvedValue(graph()) });
+    const out = JSON.parse(await handleSearch(client, { q: "roadmap", domain: "Company" }));
+    expect(out.results.every((r: { domain: string }) => r.domain === "Company")).toBe(true);
+  });
 
-    await handleSearch(client, {
-      q: "strategy",
-      lens: "Company",
-      types: ["Decision", "Principle"],
-    });
-
-    expect(client.get).toHaveBeenCalledWith("/api/v1/search", expect.objectContaining({
-      lens: "Company",
-      types: "Decision,Principle",
-    }));
+  test("clamps limit to 50", async () => {
+    const client = mockClient({ get: jest.fn().mockResolvedValue(graph()) });
+    const out = JSON.parse(await handleSearch(client, { q: "strategy", limit: 999 }));
+    expect(out.count).toBeLessThanOrEqual(50);
   });
 
   test("throws on empty query", async () => {
     const client = mockClient();
     await expect(handleSearch(client, { q: "   " })).rejects.toThrow("q is required");
   });
-
-  test("clamps limit to max 50", async () => {
-    const client = mockClient({ get: jest.fn().mockResolvedValue({ nodes: [], total: 0 }) });
-    await handleSearch(client, { q: "test", limit: 999 });
-
-    expect(client.get).toHaveBeenCalledWith(
-      "/api/v1/search",
-      expect.objectContaining({ limit: 50 }),
-    );
-  });
 });
 
 // ── hebbian_ask ───────────────────────────────────────────────────────────────
 
 describe("hebbian_ask", () => {
-  test("calls POST /api/v1/ask with question body", async () => {
-    const response = { answer: "Yes", citations: [], lens_scope: {} };
-    const client = mockClient({ post: jest.fn().mockResolvedValue(response) });
+  test("calls POST /ask with { query }", async () => {
+    const response = { answer: "Yes", sources: [], scope_receipt: "ok" };
+    const post = jest.fn().mockResolvedValue(response);
+    const client = mockClient({ post });
 
-    const result = await handleAsk(client, { question: "What is the company strategy?" });
+    const result = await handleAsk(client, { question: "What is the strategy?" });
 
-    expect(client.post).toHaveBeenCalledWith("/api/v1/ask", {
-      question: "What is the company strategy?",
-    });
+    expect(post).toHaveBeenCalledWith("/ask", { query: "What is the strategy?" });
     expect(JSON.parse(result)).toEqual(response);
   });
 
@@ -143,82 +147,84 @@ describe("hebbian_ask", () => {
     await expect(handleAsk(client, { question: "" })).rejects.toThrow("question is required");
   });
 
-  test("surfaces 403 as permission denied message", async () => {
+  test("surfaces 403 as permission denied", async () => {
     const client = mockClient({
-      post: jest.fn().mockRejectedValue(
-        new HebbianApiError(403, "SCOPE_INSUFFICIENT", "Company scope required"),
-      ),
+      post: jest.fn().mockRejectedValue(new HebbianApiError(403, "forbidden", "scope")),
     });
-
-    await expect(handleAsk(client, { question: "test" })).rejects.toThrow(
-      "Permission denied",
-    );
+    await expect(handleAsk(client, { question: "test" })).rejects.toThrow("Permission denied");
   });
 });
 
 // ── hebbian_capture ───────────────────────────────────────────────────────────
 
 describe("hebbian_capture", () => {
-  test("calls POST /api/v1/capture with text body", async () => {
-    const response = { seed_uuid: "abc-123", status: "promoted", node_uuid: "def-456" };
-    const client = mockClient({ post: jest.fn().mockResolvedValue(response) });
+  test("calls POST /capture with { title, body }", async () => {
+    const response = { uuid: "abc-123", created: true };
+    const post = jest.fn().mockResolvedValue(response);
+    const client = mockClient({ post });
 
-    const result = await handleCapture(client, { text: "Important insight about Q3" });
+    const result = await handleCapture(client, { title: "Insight", text: "Q3 note" });
 
-    expect(client.post).toHaveBeenCalledWith("/api/v1/capture", {
-      text: "Important insight about Q3",
-    });
+    expect(post).toHaveBeenCalledWith("/capture", { title: "Insight", body: "Q3 note" });
     expect(JSON.parse(result)).toEqual(response);
   });
 
-  test("includes lens and subject when provided", async () => {
-    const client = mockClient({ post: jest.fn().mockResolvedValue({ seed_uuid: "x", status: "pending" }) });
+  test("maps scope=company → owner_kind, passes domain + tags", async () => {
+    const post = jest.fn().mockResolvedValue({ uuid: "x", created: true });
+    const client = mockClient({ post });
 
     await handleCapture(client, {
-      text: "Decision made about hiring",
-      lens: "Company",
-      subject: "Acme Inc",
+      title: "Decision",
+      text: "Hiring decision",
+      domain: "Company",
+      tags: ["hr"],
+      scope: "company",
     });
 
-    expect(client.post).toHaveBeenCalledWith("/api/v1/capture", {
-      text: "Decision made about hiring",
-      lens: "Company",
-      subject: "Acme Inc",
+    expect(post).toHaveBeenCalledWith("/capture", {
+      title: "Decision",
+      body: "Hiring decision",
+      domain: "Company",
+      tags: ["hr"],
+      owner_kind: "company",
     });
   });
 
-  test("throws on empty text", async () => {
+  test("private scope does NOT set owner_kind", async () => {
+    const post = jest.fn().mockResolvedValue({ uuid: "x", created: true });
+    const client = mockClient({ post });
+    await handleCapture(client, { title: "T", text: "B", scope: "private" });
+    const body = post.mock.calls[0][1] as Record<string, unknown>;
+    expect(body).not.toHaveProperty("owner_kind");
+  });
+
+  test("throws on empty title or text", async () => {
     const client = mockClient();
-    await expect(handleCapture(client, { text: "" })).rejects.toThrow("text is required");
+    await expect(handleCapture(client, { title: "", text: "x" })).rejects.toThrow("title is required");
+    await expect(handleCapture(client, { title: "x", text: "" })).rejects.toThrow("text is required");
   });
 });
 
-// ── hebbian_traverse ──────────────────────────────────────────────────────────
+// ── hebbian_traverse (graph-derived BFS) ───────────────────────────────────────
 
 describe("hebbian_traverse", () => {
-  const UUID = "abc-456";
+  test("walks edges from the start node (handles { to } edge shape)", async () => {
+    const get = jest.fn().mockResolvedValue(graph());
+    const client = mockClient({ get });
 
-  test("calls GET /api/v1/traverse/:uuid with default hops", async () => {
-    const response = { nodes: [], edges: [], start_uuid: UUID, hops: 2 };
-    const client = mockClient({ get: jest.fn().mockResolvedValue(response) });
+    const out = JSON.parse(await handleTraverse(client, { start_uuid: "n1", max_hops: 2 }));
 
-    await handleTraverse(client, { start_uuid: UUID });
-
-    expect(client.get).toHaveBeenCalledWith(
-      `/api/v1/traverse/${UUID}`,
-      expect.objectContaining({ max_hops: 2 }),
-    );
+    expect(get).toHaveBeenCalledWith("/vault/graph");
+    expect(out.node_count).toBe(2); // n1 + neighbour n2
+    expect(out.edge_count).toBe(1);
+    expect(out.edges[0]).toMatchObject({ source_uuid: "n1", target_uuid: "n2" });
   });
 
-  test("clamps max_hops to 5", async () => {
-    const client = mockClient({ get: jest.fn().mockResolvedValue({ nodes: [], edges: [], start_uuid: UUID, hops: 5 }) });
-
-    await handleTraverse(client, { start_uuid: UUID, max_hops: 100 });
-
-    expect(client.get).toHaveBeenCalledWith(
-      expect.any(String),
-      expect.objectContaining({ max_hops: 5 }),
-    );
+  test("returns a friendly message when start node not visible", async () => {
+    const client = mockClient({ get: jest.fn().mockResolvedValue(graph()) });
+    const out = JSON.parse(await handleTraverse(client, { start_uuid: "missing" }));
+    expect(out.nodes).toEqual([]);
+    expect(out.message).toMatch(/not found/i);
   });
 
   test("throws on missing start_uuid", async () => {
@@ -227,19 +233,25 @@ describe("hebbian_traverse", () => {
   });
 });
 
-// ── hebbian_provenance ────────────────────────────────────────────────────────
+// ── hebbian_provenance (graph-derived) ─────────────────────────────────────────
 
 describe("hebbian_provenance", () => {
-  const UUID = "prov-uuid-789";
+  test("returns the node's provenance from the graph", async () => {
+    const get = jest.fn().mockResolvedValue(graph());
+    const client = mockClient({ get });
 
-  test("calls GET /api/v1/nodes/:uuid/provenance", async () => {
-    const response = { uuid: UUID, paths: [], source_quotes: [], intake_events: [] };
-    const client = mockClient({ get: jest.fn().mockResolvedValue(response) });
+    const out = JSON.parse(await handleProvenance(client, { uuid: "n1" }));
 
-    const result = await handleProvenance(client, { uuid: UUID });
+    expect(get).toHaveBeenCalledWith("/vault/graph");
+    expect(out.uuid).toBe("n1");
+    expect(out.provenance).toMatchObject({ path: "B" });
+  });
 
-    expect(client.get).toHaveBeenCalledWith(`/api/v1/nodes/${UUID}/provenance`);
-    expect(JSON.parse(result)).toEqual(response);
+  test("friendly message when node not visible", async () => {
+    const client = mockClient({ get: jest.fn().mockResolvedValue(graph()) });
+    const out = JSON.parse(await handleProvenance(client, { uuid: "nope" }));
+    expect(out.provenance).toBeNull();
+    expect(out.message).toMatch(/not found/i);
   });
 
   test("throws on empty uuid", async () => {
@@ -253,43 +265,22 @@ describe("hebbian_provenance", () => {
 describe("hebbian_salience", () => {
   const UUID = "sal-uuid-000";
 
-  test("returns stub when API returns 404 (SNN not live)", async () => {
-    const client = mockClient({
-      get: jest.fn().mockRejectedValue(
-        new HebbianApiError(404, "NOT_FOUND", "Salience endpoint not found"),
-      ),
-    });
+  test("calls GET /metrics/nodes/:uuid/activation-history", async () => {
+    const data = { node_uuid: UUID, count: 0, history: [] };
+    const get = jest.fn().mockResolvedValue(data);
+    const client = mockClient({ get });
 
     const result = await handleSalience(client, { uuid: UUID });
-    const parsed = JSON.parse(result) as {
-      status: string;
-      uuid: string;
-      synaptic_fidelity: null;
-    };
 
-    expect(parsed.status).toBe("pending_snn_p10");
-    expect(parsed.uuid).toBe(UUID);
-    expect(parsed.synaptic_fidelity).toBeNull();
+    expect(get).toHaveBeenCalledWith(`/metrics/nodes/${UUID}/activation-history`);
+    expect(JSON.parse(result)).toEqual(data);
   });
 
-  test("returns real data when API responds successfully", async () => {
-    const realData = { uuid: UUID, activation_strength: 0.87, synaptic_fidelity: 0.92 };
-    const client = mockClient({ get: jest.fn().mockResolvedValue(realData) });
-
-    const result = await handleSalience(client, { uuid: UUID });
-    expect(JSON.parse(result)).toEqual(realData);
-  });
-
-  test("throws on 401 (not swallowed as 404)", async () => {
+  test("surfaces auth error on 401", async () => {
     const client = mockClient({
-      get: jest.fn().mockRejectedValue(
-        new HebbianApiError(401, "TOKEN_EXPIRED", "Token expired"),
-      ),
+      get: jest.fn().mockRejectedValue(new HebbianApiError(401, "invalid_token", "expired")),
     });
-
-    await expect(handleSalience(client, { uuid: UUID })).rejects.toThrow(
-      "Authentication failed",
-    );
+    await expect(handleSalience(client, { uuid: UUID })).rejects.toThrow("Authentication failed");
   });
 
   test("throws on empty uuid", async () => {
@@ -301,45 +292,40 @@ describe("hebbian_salience", () => {
 // ── hebbian_recent_activity ───────────────────────────────────────────────────
 
 describe("hebbian_recent_activity", () => {
-  test("calls GET /api/v1/activity with default limit", async () => {
-    const response = { items: [], total: 0, generated_at: "2026-05-15T12:00:00Z" };
-    const client = mockClient({ get: jest.fn().mockResolvedValue(response) });
+  test("calls GET /vault/activity with default limit", async () => {
+    const get = jest.fn().mockResolvedValue({ events: [], total: 0 });
+    const client = mockClient({ get });
 
     await handleRecentActivity(client, {});
 
-    expect(client.get).toHaveBeenCalledWith(
-      "/api/v1/activity",
+    expect(get).toHaveBeenCalledWith(
+      "/vault/activity",
       expect.objectContaining({ limit: 20 }),
     );
   });
 
-  test("passes 'since' param when provided", async () => {
-    const client = mockClient({ get: jest.fn().mockResolvedValue({ items: [], total: 0, generated_at: "" }) });
-
+  test("passes 'since' when provided", async () => {
+    const get = jest.fn().mockResolvedValue({ events: [], total: 0 });
+    const client = mockClient({ get });
     await handleRecentActivity(client, { since: "2026-05-14T09:00:00Z", limit: 10 });
-
-    expect(client.get).toHaveBeenCalledWith("/api/v1/activity", expect.objectContaining({
+    expect(get).toHaveBeenCalledWith("/vault/activity", expect.objectContaining({
       since: "2026-05-14T09:00:00Z",
       limit: 10,
     }));
   });
 
-  test("clamps limit to max 100", async () => {
-    const client = mockClient({ get: jest.fn().mockResolvedValue({ items: [], total: 0, generated_at: "" }) });
-
+  test("clamps limit to 100", async () => {
+    const get = jest.fn().mockResolvedValue({ events: [], total: 0 });
+    const client = mockClient({ get });
     await handleRecentActivity(client, { limit: 999 });
-
-    expect(client.get).toHaveBeenCalledWith(
-      "/api/v1/activity",
-      expect.objectContaining({ limit: 100 }),
-    );
+    expect(get).toHaveBeenCalledWith("/vault/activity", expect.objectContaining({ limit: 100 }));
   });
 
-  test("throws on invalid 'since' datetime", async () => {
+  test("throws on invalid 'since'", async () => {
     const client = mockClient();
-    await expect(
-      handleRecentActivity(client, { since: "not-a-date" }),
-    ).rejects.toThrow("valid ISO 8601 datetime");
+    await expect(handleRecentActivity(client, { since: "not-a-date" })).rejects.toThrow(
+      "valid ISO 8601 datetime",
+    );
   });
 });
 
@@ -347,22 +333,17 @@ describe("hebbian_recent_activity", () => {
 
 describe("HebbianApiError.toToolError()", () => {
   test("401 includes refresh hint", () => {
-    const err = new HebbianApiError(401, "TOKEN_EXPIRED", "Expired");
-    expect(err.toToolError()).toContain("Generate a new token");
+    expect(new HebbianApiError(401, "invalid_token", "Expired").toToolError()).toContain(
+      "Generate a new token",
+    );
   });
-
   test("403 includes scope hint", () => {
-    const err = new HebbianApiError(403, "SCOPE_DENIED", "Denied");
-    expect(err.toToolError()).toContain("token scope");
+    expect(new HebbianApiError(403, "forbidden", "Denied").toToolError()).toContain("token scope");
   });
-
   test("429 includes retry hint", () => {
-    const err = new HebbianApiError(429, "RATE_LIMITED", "Too many requests");
-    expect(err.toToolError()).toContain("Slow down");
+    expect(new HebbianApiError(429, "rate_limited", "Too many").toToolError()).toContain("Slow down");
   });
-
   test("generic error includes status code", () => {
-    const err = new HebbianApiError(500, "INTERNAL_ERROR", "Server fault");
-    expect(err.toToolError()).toContain("500");
+    expect(new HebbianApiError(500, "internal", "fault").toToolError()).toContain("500");
   });
 });

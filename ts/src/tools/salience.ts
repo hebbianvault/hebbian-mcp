@@ -2,12 +2,9 @@
  * src/tools/salience.ts
  *
  * Tool: hebbian_salience
- * Return the salience snapshot for a node — current activation strength,
- * synaptic fidelity, and reinforcement signal.
- *
- * NOTE: This tool is a no-op until SNN Phase 10 ships (ADR-023).
- * It returns a stub response indicating the feature is pending.
- * Maps to: GET /api/v1/nodes/:uuid/salience
+ * Return the recent activity/salience history for a node — how often and how
+ * recently it has been surfacing in the workspace.
+ * Maps to: GET /metrics/nodes/:uuid/activation-history
  */
 
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
@@ -17,20 +14,17 @@ import { HebbianApiError } from "../client.js";
 export const HEBBIAN_SALIENCE: Tool = {
   name: "hebbian_salience",
   description:
-    "Retrieve the salience snapshot for a Hebbian vault node. Returns the node's " +
-    "current activation strength, synaptic fidelity score, and reinforcement signal. " +
-    "High-salience nodes are surfacing in the activity timeline; low-salience nodes " +
-    "are fading from daily relevance. " +
-    "NOTE: This tool returns a placeholder response until the SNN (Spiking Neural " +
-    "Network) layer ships in Phase 10. The synaptic fidelity and activation values " +
-    "are mock data — do not treat them as ground truth yet.",
+    "Retrieve the salience history for a workspace node — a timeline of how often " +
+    "and how recently it has been surfacing. Use this to gauge whether a node is " +
+    "currently active and relevant, or fading from daily use. Returns an empty " +
+    "history when a node has no recorded activity yet.",
   inputSchema: {
     type: "object",
     properties: {
       uuid: {
         type: "string",
         description:
-          "UUID of the node whose salience snapshot to retrieve. " +
+          "UUID of the node whose salience history to retrieve. " +
           "Obtain from hebbian_search or hebbian_traverse.",
       },
     },
@@ -43,17 +37,6 @@ interface SalienceArgs {
   uuid: string;
 }
 
-// Placeholder response shape until SNN P10 ships
-interface SalienceStub {
-  uuid: string;
-  status: "pending_snn_p10";
-  message: string;
-  fidelity_check_score: null;
-  synaptic_fidelity: null;
-  activation_strength: null;
-  signal: null;
-}
-
 export async function handleSalience(
   client: HebbianClient,
   args: SalienceArgs,
@@ -64,27 +47,12 @@ export async function handleSalience(
     throw new Error("uuid is required and must be a non-empty string");
   }
 
-  // Try the real endpoint first — if SNN P10 has shipped, use real data
   try {
-    const result = await client.get(`/api/v1/nodes/${encodeURIComponent(uuid.trim())}/salience`);
+    const result = await client.get(
+      `/metrics/nodes/${encodeURIComponent(uuid.trim())}/activation-history`,
+    );
     return JSON.stringify(result, null, 2);
   } catch (err) {
-    if (err instanceof HebbianApiError && err.statusCode === 404) {
-      // SNN not yet live — return stub
-      const stub: SalienceStub = {
-        uuid: uuid.trim(),
-        status: "pending_snn_p10",
-        message:
-          "Salience data is not yet available. The SNN reinforcement layer " +
-          "(Phase 10) has not shipped yet. This tool will return real activation " +
-          "and fidelity values once SNN P10 is live.",
-        fidelity_check_score: null,
-        synaptic_fidelity: null,
-        activation_strength: null,
-        signal: null,
-      };
-      return JSON.stringify(stub, null, 2);
-    }
     if (err instanceof HebbianApiError) {
       throw new Error(err.toToolError());
     }

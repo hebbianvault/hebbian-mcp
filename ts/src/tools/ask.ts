@@ -2,8 +2,13 @@
  * src/tools/ask.ts
  *
  * Tool: hebbian_ask
- * Synthesis Q&A grounded in the vault's source_quotes.
- * Maps to: POST /api/v1/ask
+ * Synthesis Q&A grounded in the workspace, returned with source quotes.
+ * Maps to: POST /ask  (request body: { query })
+ *
+ * The API response includes `answer`, `sources[]` (each with a `quote`,
+ * `title`, `domain`, `node_uuid`), and a `scope_receipt` describing which
+ * part of the workspace was searched — what you can see is enforced
+ * server-side by your token's scope.
  */
 
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
@@ -13,21 +18,20 @@ import { HebbianApiError } from "../client.js";
 export const HEBBIAN_ASK: Tool = {
   name: "hebbian_ask",
   description:
-    "Ask a synthesis question grounded in the Hebbian vault. The API runs " +
-    "retrieval-augmented generation (RAG) against the tenant brain and returns " +
-    "an answer with citations (node UUIDs + source_quotes). Use this when you " +
-    "need synthesised insight — not just a list of nodes. Token scope determines " +
-    "which lenses are searched: an employee token searches employee + company " +
-    "brains; a company token searches the full org brain. " +
-    "Note: each call consumes tenant AI-action budget (metered in billing).",
+    "Ask a synthesis question grounded in your Hebbian workspace. Returns an " +
+    "answer backed by source quotes (each citing the node it came from) plus a " +
+    "scope receipt showing what the answer was drawn from. Use this when you " +
+    "need synthesised insight — not just a list of nodes. What the answer can " +
+    "draw on is determined by your token's scope and enforced server-side. " +
+    "Note: each call consumes your workspace's AI-action budget (metered in billing).",
   inputSchema: {
     type: "object",
     properties: {
       question: {
         type: "string",
         description:
-          "Natural language question to ask the Hebbian vault. " +
-          "Be specific — the synthesis is grounded in source quotes, " +
+          "Natural language question to ask your Hebbian workspace. " +
+          "Be specific — the answer is grounded in source quotes, " +
           "so precise questions yield more accurate citations.",
       },
     },
@@ -51,7 +55,8 @@ export async function handleAsk(
   }
 
   try {
-    const result = await client.post("/api/v1/ask", { question: question.trim() });
+    // API contract: the request field is `query`.
+    const result = await client.post("/ask", { query: question.trim() });
     return JSON.stringify(result, null, 2);
   } catch (err) {
     if (err instanceof HebbianApiError) {

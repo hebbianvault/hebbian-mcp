@@ -2,7 +2,6 @@
  * src/tools/index.ts
  *
  * Re-exports all 8 tool definitions for @hebbianvault/mcp.
- * Tools are 1:1 with Hebbian API cognitive endpoints (ADR-023).
  */
 
 export { HEBBIAN_READ_NODE, handleReadNode } from "./read_node.js";
