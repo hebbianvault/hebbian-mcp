@@ -99,6 +99,38 @@ Your token decides what the adapter can see and do — a personal-workspace toke
 
 Results only ever include what your token is allowed to see.
 
+## Onboard an agent you already use
+
+Every agent you already run carries its own context: a Claude Code memory directory, CLAUDE.md files, a folder of markdown notes. The `absorb` command brings that accumulated context into Hebbian, so an agent you have used for months arrives with what it already knows instead of a blank slate.
+
+Absorbed files land as seeds in your review lane (they do not write straight into the workspace), attributed to the agent principal you name. You review and promote them like any other proposed knowledge.
+
+First, register the agent and issue it a token from your Hebbian integrations page (AI Tools tab), and note its agent id. Then point `absorb` at the store:
+
+```bash
+# A Claude Code memory directory (MEMORY.md index + CLAUDE.md files + notes)
+HEBBIAN_API_TOKEN=your_agent_token \
+  npx -y @hebbianvault/mcp absorb claude-code ~/.claude/projects/my-project --agent <agent_id>
+
+# Any directory of markdown files
+HEBBIAN_API_TOKEN=your_agent_token \
+  npx -y @hebbianvault/mcp absorb markdown ./docs --agent <agent_id>
+
+# Walk and report what would be uploaded, without uploading
+npx -y @hebbianvault/mcp absorb claude-code ~/.claude/projects/my-project --dry-run
+```
+
+Each `*.md` file becomes one seed. The title is the file's first heading (or its name), and the source identifier is its path relative to the directory you pointed at. Re-running `absorb` on the same directory is safe: a file already absorbed for that agent is reported as a duplicate, not uploaded twice.
+
+### What never leaves your machine
+
+`absorb` excludes secrets before anything is sent:
+
+- Files whose names look like credentials are skipped entirely: `.env*`, anything with `credentials`, `secret`, or `token` in the name, plus `.pem`, `.key`, and SSH key files.
+- Token-shaped strings inside the files it does read are redacted before upload: `sk-...`, `ghp_...`, `hbn_...`, Slack and AWS keys, JWTs, long hex and base64 blobs, and Bearer header values.
+
+Every run prints a summary of how many files were skipped and how many strings were redacted, so you can see exactly what was filtered.
+
 ## Security
 
 - Tokens are bearer credentials — treat like passwords.

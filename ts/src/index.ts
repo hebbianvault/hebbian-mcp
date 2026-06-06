@@ -34,6 +34,7 @@ import {
 import { loadConfig } from "./config.js";
 import { HebbianClient } from "./client.js";
 import { printBanner } from "./banner.js";
+import { runAbsorb } from "./absorb/cli.js";
 import {
   HEBBIAN_READ_NODE, handleReadNode,
   HEBBIAN_SEARCH, handleSearch,
@@ -174,9 +175,26 @@ async function main(): Promise<void> {
   );
 }
 
-main().catch((err: unknown) => {
-  process.stderr.write(
-    `[hebbian-mcp] Fatal startup error: ${err instanceof Error ? err.message : String(err)}\n`,
-  );
-  process.exit(1);
-});
+// ── Entry dispatch ───────────────────────────────────────────────────────────
+// With NO subcommand, boot the MCP stdio server (unchanged default). The first
+// argv is the subcommand: `hebbian-mcp absorb <store> <dir> --agent <id>` runs
+// the one-shot context-absorption importer (ADR-055) instead of the server.
+const subcommand = process.argv[2];
+
+if (subcommand === "absorb") {
+  runAbsorb(process.argv.slice(3))
+    .then((code) => process.exit(code))
+    .catch((err: unknown) => {
+      process.stderr.write(
+        `[hebbian-mcp] absorb error: ${err instanceof Error ? err.message : String(err)}\n`,
+      );
+      process.exit(1);
+    });
+} else {
+  main().catch((err: unknown) => {
+    process.stderr.write(
+      `[hebbian-mcp] Fatal startup error: ${err instanceof Error ? err.message : String(err)}\n`,
+    );
+    process.exit(1);
+  });
+}
