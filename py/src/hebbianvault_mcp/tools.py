@@ -27,6 +27,9 @@ DEFAULT_SEARCH_LIMIT = 10
 MAX_SEARCH_LIMIT = 50
 DEFAULT_ACTIVITY_LIMIT = 20
 MAX_ACTIVITY_LIMIT = 100
+DEFAULT_BUDGET_TOKENS = 2000
+MIN_BUDGET_TOKENS = 50
+MAX_BUDGET_TOKENS = 32000
 
 
 # ── Tool schemas (used by the MCP server to register tools) ───────────────────
@@ -93,6 +96,49 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                 "question": {"type": "string", "description": "Natural language question."},
             },
             "required": ["question"],
+            "additionalProperties": False,
+        },
+    },
+    {
+        "name": "hebbian_context",
+        "description": (
+            "Get the most relevant context for a task from your Hebbian workspace, "
+            "ranked by salience and trimmed to a token budget. Give a plain-language "
+            "task description and a budget; get back a context pack. Each item carries "
+            "its source node, an excerpt, a salience score, and a short reason it was "
+            "included. Use this instead of search when you want context shaped for a "
+            "task rather than a raw list of nodes. Results only ever include what your "
+            "token is allowed to see, enforced server-side."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "task": {
+                    "type": "string",
+                    "description": "Plain-language description of the task the context is for.",
+                },
+                "budget_tokens": {
+                    "type": "number",
+                    "description": (
+                        f"Token budget for the returned pack. Default: {DEFAULT_BUDGET_TOKENS}. "
+                        f"Min: {MIN_BUDGET_TOKENS}. Max: {MAX_BUDGET_TOKENS}. The pack is trimmed "
+                        "in salience order to fit."
+                    ),
+                    "minimum": MIN_BUDGET_TOKENS,
+                    "maximum": MAX_BUDGET_TOKENS,
+                },
+                "scope": {
+                    "type": "string",
+                    "enum": ["synthesis", "company", "employee", "bridge"],
+                    "description": (
+                        "Which part of the workspace to draw from. 'synthesis' (default) "
+                        "blends company and your own notes; 'company' is the company brain only; "
+                        "'employee' is your own notes only; 'bridge' is the cross-pollinated view. "
+                        "Your token's scope still bounds what is reachable."
+                    ),
+                },
+            },
+            "required": ["task"],
             "additionalProperties": False,
         },
     },
@@ -336,6 +382,23 @@ async def handle_ask(client: HebbianClient, args: dict[str, Any]) -> str:
         raise RuntimeError(exc.to_tool_error()) from exc
 
 
+async def handle_context(client: HebbianClient, args: dict[str, Any]) -> str:
+    """Task-shaped retrieval: a salience-ranked context pack within a token budget."""
+    task = _require_str(args, "task")
+    budget = min(
+        max(MIN_BUDGET_TOKENS, int(args.get("budget_tokens", DEFAULT_BUDGET_TOKENS))),
+        MAX_BUDGET_TOKENS,
+    )
+    body: dict[str, Any] = {"task": task, "budget_tokens": budget}
+    if scope := args.get("scope"):
+        body["filters"] = {"scope": str(scope)}
+    try:
+        result = await client.post("/v1/context", body)
+        return json.dumps(result, indent=2)
+    except HebbianApiError as exc:
+        raise RuntimeError(exc.to_tool_error()) from exc
+
+
 async def handle_capture(client: HebbianClient, args: dict[str, Any]) -> str:
     """Write a note into the workspace (confidential-by-default)."""
     title = _require_str(args, "title")
@@ -499,6 +562,7 @@ TOOL_HANDLERS: dict[str, Any] = {
     "hebbian_read_node": handle_read_node,
     "hebbian_search": handle_search,
     "hebbian_ask": handle_ask,
+    "hebbian_context": handle_context,
     "hebbian_capture": handle_capture,
     "hebbian_traverse": handle_traverse,
     "hebbian_provenance": handle_provenance,

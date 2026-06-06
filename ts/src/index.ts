@@ -9,10 +9,11 @@
  * Auth: set HEBBIAN_API_TOKEN (or HEBBIAN_TOKEN) env var, or write a config
  * file at ~/.config/hebbian/mcp-tenant.json with { "token": "hbn_..." }.
  *
- * 8 tools:
+ * 9 tools:
  *   hebbian_read_node       — fetch a node by UUID
  *   hebbian_search          — search the workspace for matching nodes
  *   hebbian_ask             — synthesis Q&A returned with source quotes
+ *   hebbian_context         — task-shaped retrieval: a salience-ranked context pack within a token budget
  *   hebbian_capture         — write a note into the workspace
  *   hebbian_traverse        — walk the graph from a starting node
  *   hebbian_provenance      — source trail for a node
@@ -37,6 +38,7 @@ import {
   HEBBIAN_READ_NODE, handleReadNode,
   HEBBIAN_SEARCH, handleSearch,
   HEBBIAN_ASK, handleAsk,
+  HEBBIAN_CONTEXT, handleContext,
   HEBBIAN_CAPTURE, handleCapture,
   HEBBIAN_TRAVERSE, handleTraverse,
   HEBBIAN_PROVENANCE, handleProvenance,
@@ -55,6 +57,7 @@ const TOOLS = [
   HEBBIAN_READ_NODE,
   HEBBIAN_SEARCH,
   HEBBIAN_ASK,
+  HEBBIAN_CONTEXT,
   HEBBIAN_CAPTURE,
   HEBBIAN_TRAVERSE,
   HEBBIAN_PROVENANCE,
@@ -106,6 +109,13 @@ async function main(): Promise<void> {
           break;
         case "hebbian_ask":
           result = await handleAsk(client, args as { question: string });
+          break;
+        case "hebbian_context":
+          result = await handleContext(client, args as {
+            task: string;
+            budget_tokens?: number;
+            scope?: "synthesis" | "company" | "employee" | "bridge";
+          });
           break;
         case "hebbian_capture":
           result = await handleCapture(client, args as {

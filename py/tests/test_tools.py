@@ -20,6 +20,7 @@ from hebbianvault_mcp.client import HebbianApiError, HebbianClient
 from hebbianvault_mcp.tools import (
     handle_ask,
     handle_capture,
+    handle_context,
     handle_provenance,
     handle_read_node,
     handle_recent_activity,
@@ -141,6 +142,45 @@ class TestAsk:
         client = mock_client(post_side_effect=HebbianApiError(403, "forbidden", "scope"))
         with pytest.raises(RuntimeError, match="Permission denied"):
             await handle_ask(client, {"question": "test"})
+
+
+# ── hebbian_context ────────────────────────────────────────────────────────────
+
+class TestContext:
+    async def test_calls_post_context_with_task_and_default_budget(self) -> None:
+        response = {"items": [], "budget_tokens": 2000, "budget_used": 0, "truncated": False}
+        client = mock_client(post_return=response)
+        result = await handle_context(client, {"task": "draft the Q3 board update"})
+        client.post.assert_called_once_with(
+            "/v1/context", {"task": "draft the Q3 board update", "budget_tokens": 2000}
+        )
+        assert json.loads(result) == response
+
+    async def test_passes_budget_and_scope_filter(self) -> None:
+        client = mock_client(post_return={"items": []})
+        await handle_context(
+            client, {"task": "summarise pipeline", "budget_tokens": 800, "scope": "company"}
+        )
+        client.post.assert_called_once_with(
+            "/v1/context",
+            {"task": "summarise pipeline", "budget_tokens": 800, "filters": {"scope": "company"}},
+        )
+
+    async def test_clamps_budget_to_max(self) -> None:
+        client = mock_client(post_return={"items": []})
+        await handle_context(client, {"task": "anything", "budget_tokens": 9_999_999})
+        body = client.post.call_args[0][1]
+        assert body["budget_tokens"] == 32000
+
+    async def test_raises_on_empty_task(self) -> None:
+        client = mock_client()
+        with pytest.raises(ValueError, match="'task' is required"):
+            await handle_context(client, {"task": ""})
+
+    async def test_surfaces_permission_denied(self) -> None:
+        client = mock_client(post_side_effect=HebbianApiError(403, "forbidden", "scope"))
+        with pytest.raises(RuntimeError, match="Permission denied"):
+            await handle_context(client, {"task": "test"})
 
 
 # ── hebbian_capture ───────────────────────────────────────────────────────────

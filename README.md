@@ -14,7 +14,7 @@ The adapter is a thin client. Your token goes in; the Hebbian service decides wh
 
 ## Install
 
-Both packages are published and expose the same 8 tools and the same configuration — use whichever matches your MCP host.
+Both packages are published and expose the same 9 tools and the same configuration. Use whichever matches your MCP host.
 
 ```bash
 # Node.js (npm) — run directly, no global install needed
@@ -33,7 +33,7 @@ See [Quick start (TypeScript)](#quick-start-typescript) and [Quick start (Python
 | `@hebbianvault/mcp` | TypeScript / Node.js | `npm install -g @hebbianvault/mcp` |
 | `hebbianvault-mcp` | Python | `pip install hebbianvault-mcp` |
 
-Both expose the same 8 tools and the same configuration. Use whichever matches your MCP host.
+Both expose the same 9 tools and the same configuration. Use whichever matches your MCP host.
 
 ## Quick start (TypeScript)
 
@@ -112,6 +112,7 @@ Generate, name, and revoke tokens from the AI Tools tab of your Hebbian integrat
 | `hebbian_read_node` | Read a single node by UUID (content, metadata, connected edges) |
 | `hebbian_search` | Find nodes in your workspace matching a query |
 | `hebbian_ask` | Ask a question and get an answer backed by source quotes |
+| `hebbian_context` | Describe a task and a token budget, get back a salience-ranked context pack that fits |
 | `hebbian_capture` | Write a note into your workspace |
 | `hebbian_traverse` | Explore nodes connected to a starting node |
 | `hebbian_provenance` | See where a node's knowledge came from |

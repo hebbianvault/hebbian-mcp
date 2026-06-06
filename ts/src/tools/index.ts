@@ -1,12 +1,13 @@
 /**
  * src/tools/index.ts
  *
- * Re-exports all 8 tool definitions for @hebbianvault/mcp.
+ * Re-exports all 9 tool definitions for @hebbianvault/mcp.
  */
 
 export { HEBBIAN_READ_NODE, handleReadNode } from "./read_node.js";
 export { HEBBIAN_SEARCH, handleSearch } from "./search.js";
 export { HEBBIAN_ASK, handleAsk } from "./ask.js";
+export { HEBBIAN_CONTEXT, handleContext } from "./context.js";
 export { HEBBIAN_CAPTURE, handleCapture } from "./capture.js";
 export { HEBBIAN_TRAVERSE, handleTraverse } from "./traverse.js";
 export { HEBBIAN_PROVENANCE, handleProvenance } from "./provenance.js";
