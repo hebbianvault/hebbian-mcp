@@ -90,6 +90,7 @@ Your token decides what the adapter can see and do — a personal-workspace toke
 | `hebbian_read_node` | Read a single node by UUID (content, metadata, connected edges) |
 | `hebbian_search` | Find nodes in your workspace matching a query |
 | `hebbian_ask` | Ask a question and get an answer backed by source quotes |
+| `hebbian_context` | Describe a task and a token budget, get back a salience-ranked context pack that fits |
 | `hebbian_capture` | Write a note into your workspace |
 | `hebbian_traverse` | Explore nodes connected to a starting node |
 | `hebbian_provenance` | See where a node's knowledge came from |
@@ -107,7 +108,7 @@ Results only ever include what your token is allowed to see.
 
 ## Python
 
-A Python sibling package is available as `hebbianvault-mcp` on PyPI. Same 8 tools, same configuration.
+A Python sibling package is available as `hebbianvault-mcp` on PyPI. Same 9 tools, same configuration.
 
 ## Development
 

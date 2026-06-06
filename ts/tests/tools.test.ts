@@ -14,6 +14,7 @@ import { HebbianApiError } from "../src/client.js";
 import { handleReadNode } from "../src/tools/read_node.js";
 import { handleSearch } from "../src/tools/search.js";
 import { handleAsk } from "../src/tools/ask.js";
+import { handleContext } from "../src/tools/context.js";
 import { handleCapture } from "../src/tools/capture.js";
 import { handleTraverse } from "../src/tools/traverse.js";
 import { handleProvenance } from "../src/tools/provenance.js";
@@ -152,6 +153,63 @@ describe("hebbian_ask", () => {
       post: jest.fn().mockRejectedValue(new HebbianApiError(403, "forbidden", "scope")),
     });
     await expect(handleAsk(client, { question: "test" })).rejects.toThrow("Permission denied");
+  });
+});
+
+// ── hebbian_context ────────────────────────────────────────────────────────────
+
+describe("hebbian_context", () => {
+  test("calls POST /v1/context with task + default budget", async () => {
+    const response = { items: [], budget_tokens: 2000, budget_used: 0, truncated: false };
+    const post = jest.fn().mockResolvedValue(response);
+    const client = mockClient({ post });
+
+    const result = await handleContext(client, { task: "draft the Q3 board update" });
+
+    expect(post).toHaveBeenCalledWith("/v1/context", {
+      task: "draft the Q3 board update",
+      budget_tokens: 2000,
+    });
+    expect(JSON.parse(result)).toEqual(response);
+  });
+
+  test("passes through budget_tokens and scope filter", async () => {
+    const post = jest.fn().mockResolvedValue({ items: [] });
+    const client = mockClient({ post });
+
+    await handleContext(client, {
+      task: "summarise pipeline",
+      budget_tokens: 800,
+      scope: "company",
+    });
+
+    expect(post).toHaveBeenCalledWith("/v1/context", {
+      task: "summarise pipeline",
+      budget_tokens: 800,
+      filters: { scope: "company" },
+    });
+  });
+
+  test("clamps budget to the allowed range", async () => {
+    const post = jest.fn().mockResolvedValue({ items: [] });
+    const client = mockClient({ post });
+
+    await handleContext(client, { task: "anything", budget_tokens: 9_999_999 });
+
+    const body = post.mock.calls[0][1] as Record<string, unknown>;
+    expect(body.budget_tokens).toBe(32000);
+  });
+
+  test("throws on empty task", async () => {
+    const client = mockClient();
+    await expect(handleContext(client, { task: "" })).rejects.toThrow("task is required");
+  });
+
+  test("surfaces 403 as permission denied", async () => {
+    const client = mockClient({
+      post: jest.fn().mockRejectedValue(new HebbianApiError(403, "forbidden", "scope")),
+    });
+    await expect(handleContext(client, { task: "test" })).rejects.toThrow("Permission denied");
   });
 });
 
