@@ -9,6 +9,12 @@ jobs:
   publish-npm:
     name: Publish @hebbianvault/mcp to npm
     runs-on: ubuntu-latest
+    # Trusted publishing (OIDC): no NPM_TOKEN secret. One-time setup on
+    # npmjs.com → package @hebbianvault/mcp → Settings → Trusted Publisher →
+    # GitHub Actions → repo hebbianvault/hebbian-mcp, workflow release.yml.
+    permissions:
+      id-token: write
+      contents: read
     defaults:
       run:
         working-directory: ts/
@@ -18,7 +24,8 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          # npm >= 11.5.1 is required for OIDC trusted publishing; Node 24 ships it.
+          node-version: "24"
           registry-url: "https://registry.npmjs.org/"
           cache: "npm"
           cache-dependency-path: ts/package-lock.json
@@ -33,13 +40,18 @@ jobs:
         run: npm test
 
       - name: Publish to npm
+        # OIDC trusted publishing — provenance attestation is automatic.
         run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
   publish-pypi:
     name: Publish hebbianvault-mcp to PyPI
     runs-on: ubuntu-latest
+    # Trusted publishing (OIDC): no PYPI_API_TOKEN secret. One-time setup on
+    # pypi.org → project hebbianvault-mcp → Publishing → add GitHub publisher:
+    # owner hebbianvault, repo hebbian-mcp, workflow release.yml.
+    permissions:
+      id-token: write
+      contents: read
     defaults:
       run:
         working-directory: py/
@@ -64,7 +76,7 @@ jobs:
         run: uv build
 
       - name: Publish to PyPI
+        # OIDC trusted publishing — no password input.
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: py/dist/
-          password: ${{ secrets.PYPI_API_TOKEN }}
