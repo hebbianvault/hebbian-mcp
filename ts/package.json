@@ -7,6 +7,14 @@
   "bin": {
     "hebbian-mcp": "dist/index.js"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/hebbianvault/hebbian-mcp.git"
+  },
+  "homepage": "https://github.com/hebbianvault/hebbian-mcp#readme",
+  "bugs": {
+    "url": "https://github.com/hebbianvault/hebbian-mcp/issues"
+  },
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",

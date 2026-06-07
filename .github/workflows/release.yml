@@ -76,7 +76,10 @@ jobs:
         run: uv build
 
       - name: Publish to PyPI
-        # OIDC trusted publishing — no password input.
+        # OIDC trusted publishing — no password input. skip-existing lets a
+        # re-tagged release re-run cleanly when one registry already has the
+        # version (e.g. v0.2.1: PyPI published, npm failed on provenance).
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           packages-dir: py/dist/
+          skip-existing: true
