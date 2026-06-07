@@ -83,6 +83,53 @@ describe("secrets.redactSecrets", () => {
     expect(content).toContain("Bearer [REDACTED]");
   });
 
+  test("redacts URL-embedded credentials but keeps scheme/user/host", () => {
+    const cases = [
+      {
+        input: "db is postgresql://app.user:S3cretPassw0rd@db.example.com:6543/postgres ok",
+        keep: "postgresql://app.user:[REDACTED]@db.example.com:6543/postgres",
+        gone: "S3cretPassw0rd",
+      },
+      {
+        input: "cache at redis://:s3cretpass@localhost:6379/0",
+        keep: "redis://:[REDACTED]@localhost:6379/0",
+        gone: "s3cretpass",
+      },
+      {
+        input: "queue amqp://guest:guestpw@mq.internal:5672",
+        keep: "amqp://guest:[REDACTED]@mq.internal:5672",
+        gone: "guestpw",
+      },
+    ];
+    for (const { input, keep, gone } of cases) {
+      const { content, redactedCount } = redactSecrets(input);
+      expect(content).toContain(keep);
+      expect(content).not.toContain(gone);
+      expect(redactedCount).toBeGreaterThanOrEqual(1);
+    }
+  });
+
+  test("leaves credential-free URLs untouched", () => {
+    const cases = [
+      "see https://docs.example.com/path?q=1 for details",
+      "git remote is ssh://git@github.com/org/repo.git", // user but no password
+      "local dev on http://localhost:3000/app",
+    ];
+    for (const text of cases) {
+      const { content, redactedCount } = redactSecrets(text);
+      expect(content).toBe(text);
+      expect(redactedCount).toBe(0);
+    }
+  });
+
+  test("redacts Supabase key prefixes", () => {
+    for (const secret of [fixture("sb_secret_"), fixture("sbp_")]) {
+      const { content, redactedCount } = redactSecrets(`key is ${secret} ok`);
+      expect(content).not.toContain(secret);
+      expect(redactedCount).toBeGreaterThanOrEqual(1);
+    }
+  });
+
   test("leaves clean prose untouched", () => {
     const text = "This is a normal memory note about the Q2 roadmap and pricing.";
     const { content, redactedCount } = redactSecrets(text);

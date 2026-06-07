@@ -50,6 +50,13 @@ const REDACT_PATTERNS: RegExp[] = [
   /\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b/g,
   // Bearer headers — redact the value, keep the word.
   /\b([Bb]earer\s+)[A-Za-z0-9._-]{20,}\b/g,
+  // URL-embedded credentials: scheme://user:password@host (postgres://, redis://,
+  // amqp://, mongodb://, …). Redact the password, keep scheme/user/host so the
+  // surrounding prose still reads sensibly.
+  /\b([a-zA-Z][a-zA-Z0-9+.-]*:\/\/[^:@\/\s]*:)[^@\s]{3,}(?=@)/g,
+  // Supabase secret / personal-access keys.
+  /\bsb_secret_[A-Za-z0-9_-]{10,}\b/g,
+  /\bsbp_[A-Za-z0-9]{20,}\b/g,
   // Generic long hex (>= 40 chars) — sha-like / hex secrets.
   /\b[0-9a-fA-F]{40,}\b/g,
   // Generic long base64-ish blob (>= 40 chars). Last so prefixed keys win first.
@@ -86,12 +93,10 @@ export function redactSecrets(content: string): RedactionResult {
   for (const re of REDACT_PATTERNS) {
     out = out.replace(re, (match, ...groups) => {
       redactedCount += 1;
-      // The Bearer rule has a capture group for the "Bearer " prefix; keep it.
+      // Rules with a capture group ("Bearer ", "scheme://user:") keep the prefix
+      // so the surrounding prose still reads sensibly; only the secret is replaced.
       const prefix = typeof groups[0] === "string" ? groups[0] : "";
-      if (prefix && /bearer/i.test(prefix)) {
-        return `${prefix}${REDACTION_MARKER}`;
-      }
-      return REDACTION_MARKER;
+      return `${prefix}${REDACTION_MARKER}`;
     });
   }
   return { content: out, redactedCount };
