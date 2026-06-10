@@ -83,3 +83,22 @@ jobs:
         with:
           packages-dir: py/dist/
           skip-existing: true
+
+  bump-homebrew-formula:
+    needs: publish-npm
+    runs-on: ubuntu-latest
+    steps:
+      - name: Bump tap formula
+        uses: mislav/bump-homebrew-formula-action@v3
+        with:
+          formula-name: hebbian-mcp
+          formula-path: Formula/hebbian-mcp.rb
+          homebrew-tap: hebbianvault/homebrew-tap
+          base-branch: main
+          download-url: https://registry.npmjs.org/@hebbianvault/mcp/-/mcp-${{ github.ref_name }}.tgz
+          commit-message: |
+            hebbian-mcp ${{ github.ref_name }}
+
+            Auto-bump from upstream release.
+        env:
+          COMMITTER_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
