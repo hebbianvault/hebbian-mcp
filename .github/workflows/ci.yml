@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [main, dev]
 
+# Cancel superseded runs on the same ref so successive pushes don't stack.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   ts:
     name: TypeScript — lint + typecheck + tests
