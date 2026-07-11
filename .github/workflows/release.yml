@@ -8,7 +8,7 @@ on:
 jobs:
   publish-npm:
     name: Publish @hebbianvault/mcp to npm
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     # Trusted publishing (OIDC): no NPM_TOKEN secret. One-time setup on
     # npmjs.com → package @hebbianvault/mcp → Settings → Trusted Publisher →
     # GitHub Actions → repo hebbianvault/hebbian-mcp, workflow release.yml.
@@ -45,7 +45,7 @@ jobs:
 
   publish-pypi:
     name: Publish hebbianvault-mcp to PyPI
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     # Trusted publishing (OIDC): no PYPI_API_TOKEN secret. One-time setup on
     # pypi.org → project hebbianvault-mcp → Publishing → add GitHub publisher:
     # owner hebbianvault, repo hebbian-mcp, workflow release.yml.
@@ -86,7 +86,7 @@ jobs:
 
   bump-homebrew-formula:
     needs: publish-npm
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
       - name: Bump tap formula
         uses: mislav/bump-homebrew-formula-action@v3
