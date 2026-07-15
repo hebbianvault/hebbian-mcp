@@ -32,6 +32,7 @@ from hebbianvault_mcp.tools import (
     handle_traverse,
 )
 
+
 def expect_framed(value: str, text: str) -> None:
     assert value == f"{UNTRUSTED_CONTENT_PREAMBLE}\n<untrusted_content>\n{text}\n</untrusted_content>"
 
