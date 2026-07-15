@@ -1,0 +1,8 @@
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Fake placeholder tokens in config-loading unit tests, not real secrets"
+paths = [
+  '''py/tests/test_config\.py''',
+]

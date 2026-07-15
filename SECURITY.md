@@ -6,7 +6,9 @@ The latest published version of `@hebbianvault/mcp` (npm) and `hebbianvault-mcp`
 
 ## Reporting a vulnerability
 
-Report security vulnerabilities to: `security@hebbian.ai` (placeholder — domain TBD).
+Report security vulnerabilities to: `security@hebbianvault.com`.
+
+`security.txt` is being rolled out to the product hosts in accordance with RFC 9116.
 
 Please do not open a public GitHub issue for security vulnerabilities.
 
