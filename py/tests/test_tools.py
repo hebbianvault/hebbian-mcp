@@ -175,7 +175,10 @@ class TestAsk:
         client = mock_client(post_return=response)
         result = await handle_ask(client, {"question": "What is the strategy?"})
         client.post.assert_called_once_with("/ask", {"query": "What is the strategy?"})
-        assert json.loads(result) == response
+        out = json.loads(result)
+        expect_framed(out["answer"], "Yes")
+        assert out["sources"] == []
+        assert out["scope_receipt"] == "ok"
 
     async def test_raises_on_empty_question(self) -> None:
         client = mock_client()

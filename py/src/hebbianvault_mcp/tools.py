@@ -509,6 +509,7 @@ async def handle_traverse(client: HebbianClient, args: dict[str, Any]) -> str:
         )
 
     visited = {start}
+    visit_order = [start]
     collected: list[dict[str, Any]] = []
     edge_seen: set[str] = set()
     frontier = [start]
@@ -537,12 +538,13 @@ async def handle_traverse(client: HebbianClient, args: dict[str, Any]) -> str:
                     )
                 if neighbour and neighbour not in visited and neighbour in by_uuid:
                     visited.add(neighbour)
+                    visit_order.append(neighbour)
                     nxt.append(neighbour)
         frontier = nxt
         if not frontier:
             break
 
-    result_nodes = [_summarise(by_uuid[u]) for u in visited if u in by_uuid]
+    result_nodes = [_summarise(by_uuid[u]) for u in visit_order if u in by_uuid]
     return _stringify_untrusted_result(
         {
             "start_uuid": start,
