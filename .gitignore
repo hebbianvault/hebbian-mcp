@@ -4,6 +4,10 @@ dist/
 *.js.map
 *.d.ts.map
 
+# Local secrets
+.env
+.env.*
+
 # Python
 __pycache__/
 *.py[cod]
