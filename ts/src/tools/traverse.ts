@@ -14,6 +14,7 @@ import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import type { HebbianClient } from "../client.js";
 import { HebbianApiError } from "../client.js";
 import { fetchGraph, normaliseEdge, summarise, type GraphNode } from "./graph_helpers.js";
+import { stringifyUntrustedResult } from "./untrusted_content.js";
 
 const MAX_HOPS = 5;
 const DEFAULT_HOPS = 2;
@@ -133,7 +134,7 @@ export async function handleTraverse(
       .filter((n): n is GraphNode => Boolean(n))
       .map(summarise);
 
-    return JSON.stringify(
+    return stringifyUntrustedResult(
       {
         start_uuid: start,
         max_hops: hops,
@@ -142,8 +143,6 @@ export async function handleTraverse(
         nodes: resultNodes,
         edges: collectedEdges,
       },
-      null,
-      2,
     );
   } catch (err) {
     if (err instanceof HebbianApiError) {

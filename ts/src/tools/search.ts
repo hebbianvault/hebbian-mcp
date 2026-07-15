@@ -20,6 +20,7 @@ import {
   summarise,
   type GraphNode,
 } from "./graph_helpers.js";
+import { stringifyUntrustedResult } from "./untrusted_content.js";
 
 export const HEBBIAN_SEARCH: Tool = {
   name: "hebbian_search",
@@ -90,10 +91,8 @@ export async function handleSearch(
       .slice(0, cap)
       .map((x) => summarise(x.n));
 
-    return JSON.stringify(
+    return stringifyUntrustedResult(
       { query: q.trim(), domain: domain ?? null, count: ranked.length, results: ranked },
-      null,
-      2,
     );
   } catch (err) {
     if (err instanceof HebbianApiError) {

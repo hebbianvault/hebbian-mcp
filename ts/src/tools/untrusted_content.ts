@@ -26,19 +26,25 @@ const UNTRUSTED_TEXT_FIELDS = new Set([
   "snippet",
   "summary",
   "text",
+  "title",
   "transcript",
 ]);
 
 /** Frame one piece of retrieved free text without changing surrounding result fields. */
 export function frameUntrustedText(value: string): string {
-  // Prevent stored content from prematurely closing the framing delimiter.
-  const safeValue = value.replaceAll("</untrusted_content>", "&lt;/untrusted_content>");
+  // Neutralize opening and closing delimiter variants before stored text is framed.
+  const safeValue = value.replace(
+    /<\s*\/?\s*untrusted_content\b[^>]*>/gi,
+    (tag) => tag.replace("<", "&lt;"),
+  );
   return `${UNTRUSTED_CONTENT_PREAMBLE}\n<untrusted_content>\n${safeValue}\n</untrusted_content>`;
 }
 
 /**
  * Recursively frame known free-text fields from an API response. IDs, counts,
- * titles, tags, dates, and other metadata retain their original values.
+ * dates, and other metadata retain their original values. Tags intentionally
+ * remain unframed: array elements lose their parent-key context during
+ * recursion, so treating all string arrays as content could alter identifiers.
  */
 export function frameUntrustedFields(value: unknown): unknown {
   if (Array.isArray(value)) {

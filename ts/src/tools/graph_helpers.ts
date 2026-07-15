@@ -13,7 +13,6 @@
  */
 
 import type { HebbianClient } from "../client.js";
-import { frameUntrustedText } from "./untrusted_content.js";
 
 export interface GraphEdge {
   // /vault/graph emits adjacency edges as { to, relation_type, weight } where
@@ -116,6 +115,6 @@ export function summarise(n: GraphNode): Record<string, unknown> {
     domain: n.domain ?? null,
     archetype: n.archetype ?? null,
     tags: n.tags ?? [],
-    snippet: frameUntrustedText(snippet),
+    snippet,
   };
 }

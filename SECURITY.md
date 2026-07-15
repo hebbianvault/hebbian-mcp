@@ -8,7 +8,7 @@ The latest published version of `@hebbianvault/mcp` (npm) and `hebbianvault-mcp`
 
 Report security vulnerabilities to: `security@hebbianvault.com`.
 
-Our product hosts also publish `security.txt` in accordance with RFC 9116.
+`security.txt` is being rolled out to the product hosts in accordance with RFC 9116.
 
 Please do not open a public GitHub issue for security vulnerabilities.
 
