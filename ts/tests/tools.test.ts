@@ -9,8 +9,9 @@
  */
 
 import { jest, describe, test, expect } from "@jest/globals";
-import type { HebbianClient } from "../src/client.js";
-import { HebbianApiError } from "../src/client.js";
+import { readFileSync } from "node:fs";
+import { HebbianApiError, HebbianClient } from "../src/client.js";
+import { SERVER_VERSION } from "../src/server_info.js";
 import { handleReadNode } from "../src/tools/read_node.js";
 import { handleSearch } from "../src/tools/search.js";
 import { handleAsk } from "../src/tools/ask.js";
@@ -576,8 +577,25 @@ describe("HebbianApiError.toToolError()", () => {
       "Generate a new token",
     );
   });
-  test("403 includes scope hint", () => {
+  test("403 with feature_disabled detail surfaces the server reason", () => {
+    const error = new HebbianApiError(403, "forbidden", "Denied", {
+      error: "feature_disabled",
+      reason: "This feature is disabled for your workspace.",
+    });
+
+    expect(error.toToolError()).toContain("This feature is disabled for your workspace.");
+    expect(error.toToolError()).not.toContain("token scope");
+  });
+  test("403 without detail includes scope hint", () => {
     expect(new HebbianApiError(403, "forbidden", "Denied").toToolError()).toContain("token scope");
+  });
+  test("401 with FastAPI detail surfaces the server reason", () => {
+    const error = new HebbianApiError(401, "unauthorized", "Unauthorized", {
+      message: "This token has been revoked.",
+    });
+
+    expect(error.toToolError()).toContain("This token has been revoked.");
+    expect(error.toToolError()).not.toContain("Generate a new token");
   });
   test("429 includes retry hint", () => {
     expect(new HebbianApiError(429, "rate_limited", "Too many").toToolError()).toContain("Slow down");
@@ -585,4 +603,59 @@ describe("HebbianApiError.toToolError()", () => {
   test("generic error includes status code", () => {
     expect(new HebbianApiError(500, "internal", "fault").toToolError()).toContain("500");
   });
+});
+
+describe("HebbianClient error responses", () => {
+  test("preserves a reason from a 403 detail body", async () => {
+    const fetchMock = jest.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          code: "forbidden",
+          detail: {
+            error: "feature_disabled",
+            reason: "This feature is disabled for your workspace.",
+          },
+        }),
+        { status: 403, headers: { "Content-Type": "application/json" } },
+      ),
+    );
+
+    const client = new HebbianClient("https://api.example.test", "token");
+    let error: unknown;
+    try {
+      await client.get("/feature");
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toBeInstanceOf(HebbianApiError);
+    expect((error as HebbianApiError).toToolError()).toContain(
+      "This feature is disabled for your workspace.",
+    );
+    fetchMock.mockRestore();
+  });
+
+  test("uses the scope hint for an empty 403 body", async () => {
+    const fetchMock = jest.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(null, { status: 403 }),
+    );
+
+    const client = new HebbianClient("https://api.example.test", "token");
+    let error: unknown;
+    try {
+      await client.get("/feature");
+    } catch (caught) {
+      error = caught;
+    }
+    expect(error).toBeInstanceOf(HebbianApiError);
+    expect((error as HebbianApiError).toToolError()).toContain("token scope");
+    fetchMock.mockRestore();
+  });
+});
+
+test("handshake version matches package.json", () => {
+  const packageJson = JSON.parse(
+    readFileSync(new URL("../package.json", import.meta.url), "utf8"),
+  ) as { version: string };
+
+  expect(SERVER_VERSION).toBe(packageJson.version);
 });

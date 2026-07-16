@@ -33,6 +33,7 @@ import {
 
 import { loadConfig } from "./config.js";
 import { HebbianClient } from "./client.js";
+import { SERVER_NAME, SERVER_VERSION } from "./server_info.js";
 import { printBanner } from "./banner.js";
 import { runAbsorb } from "./absorb/cli.js";
 import {
@@ -48,9 +49,6 @@ import {
 } from "./tools/index.js";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
-
-const SERVER_NAME = "@hebbianvault/mcp";
-const SERVER_VERSION = "0.2.0";
 
 // ── All registered tools ───────────────────────────────────────────────────────
 

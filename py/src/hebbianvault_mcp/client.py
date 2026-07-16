@@ -14,9 +14,11 @@ from typing import Any
 
 import httpx
 
+from . import __version__
+
 logger = logging.getLogger(__name__)
 
-USER_AGENT = "hebbianvault-mcp/0.2.0 (Python)"
+USER_AGENT = f"hebbianvault-mcp/{__version__} (Python)"
 
 
 class HebbianApiError(Exception):
@@ -36,22 +38,39 @@ class HebbianApiError(Exception):
 
     def to_tool_error(self) -> str:
         """Human-readable string for MCP tool error responses."""
+        server_reason = _detail_reason(self.detail)
         if self.status_code == 401:
+            tool_error = f"Authentication failed ({self.error_code}): {server_reason or self}."
+            if server_reason:
+                return tool_error
             return (
-                f"Authentication failed ({self.error_code}): {self}. "
-                "Your token may be expired or revoked. "
+                f"{tool_error} Your token may be expired or revoked. "
                 "Generate a new token from the AI Tools tab in your Hebbian integrations page."
             )
         if self.status_code == 403:
-            return (
-                f"Permission denied ({self.error_code}): {self}. "
-                "Check that your token scope (employee/company) matches the operation."
-            )
+            tool_error = f"Permission denied ({self.error_code}): {server_reason or self}."
+            if server_reason:
+                return tool_error
+            return f"{tool_error} Check that your token scope (employee/company) matches the operation."
         if self.status_code == 404:
             return f"Not found ({self.error_code}): {self}"
         if self.status_code == 429:
             return f"Rate limit exceeded ({self.error_code}): {self}. Slow down and retry."
         return f"API error {self.status_code} ({self.error_code}): {self}"
+
+
+def _detail_reason(detail: Any) -> str | None:
+    """Extract an actionable reason from structured API and FastAPI detail bodies."""
+    if isinstance(detail, str):
+        return detail.strip() or None
+    if not isinstance(detail, dict):
+        return None
+
+    for field in ("reason", "message", "error", "msg"):
+        value = detail.get(field)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
 
 
 class HebbianClient:
@@ -105,8 +124,8 @@ class HebbianClient:
         try:
             body = response.json()
             error_code = body.get("code") or body.get("error") or error_code
-            message = body.get("message") or body.get("error") or message
             detail = body.get("detail")
+            message = _detail_reason(detail) or body.get("message") or body.get("error") or message
         except Exception:  # noqa: BLE001
             message = response.text or message
 

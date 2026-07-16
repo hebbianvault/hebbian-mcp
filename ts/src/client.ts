@@ -9,6 +9,8 @@
  * - All tool call implementations live in src/tools/*.ts.
  */
 
+import { PACKAGE_VERSION } from "./package_info.js";
+
 /** Structured API error returned by the Hebbian API (RFC 7807 variant). */
 export class HebbianApiError extends Error {
   constructor(
@@ -23,18 +25,18 @@ export class HebbianApiError extends Error {
 
   /** Human-readable string for MCP tool error responses. */
   toToolError(): string {
+    const serverReason = detailReason(this.detail);
+    const message = serverReason ?? this.message;
     if (this.statusCode === 401) {
-      return (
-        `Authentication failed (${this.errorCode}): ${this.message}. ` +
-        "Your token may be expired or revoked. " +
-        "Generate a new token from the AI Tools tab in your Hebbian integrations page."
-      );
+      const toolError = `Authentication failed (${this.errorCode}): ${message}.`;
+      if (serverReason) return toolError;
+      return `${toolError} Your token may be expired or revoked. ` +
+        "Generate a new token from the AI Tools tab in your Hebbian integrations page.";
     }
     if (this.statusCode === 403) {
-      return (
-        `Permission denied (${this.errorCode}): ${this.message}. ` +
-        "Check that your token scope (employee/company) matches the operation."
-      );
+      const toolError = `Permission denied (${this.errorCode}): ${message}.`;
+      if (serverReason) return toolError;
+      return `${toolError} Check that your token scope (employee/company) matches the operation.`;
     }
     if (this.statusCode === 404) {
       return `Not found (${this.errorCode}): ${this.message}`;
@@ -44,6 +46,25 @@ export class HebbianApiError extends Error {
     }
     return `API error ${this.statusCode} (${this.errorCode}): ${this.message}`;
   }
+}
+
+/** Extract the actionable reason from structured API and FastAPI detail bodies. */
+function detailReason(detail: unknown): string | undefined {
+  if (typeof detail === "string") {
+    return detail.trim() || undefined;
+  }
+  if (!detail || typeof detail !== "object" || Array.isArray(detail)) {
+    return undefined;
+  }
+
+  const values = detail as Record<string, unknown>;
+  for (const field of ["reason", "message", "error", "msg"]) {
+    const value = values[field];
+    if (typeof value === "string" && value.trim()) {
+      return value.trim();
+    }
+  }
+  return undefined;
 }
 
 /** Shape of Hebbian API error response bodies. */
@@ -108,6 +129,15 @@ export class HebbianClient {
   }
 
   /** Build an absolute URL from path + optional query params. */
+  private headers(): Record<string, string> {
+    return {
+      Authorization: `Bearer ${this.token}`,
+      "User-Agent": `@hebbianvault/mcp/${PACKAGE_VERSION}`,
+      Accept: "application/json",
+      ...(this.tenant && { "X-Hebbian-Tenant": this.tenant }),
+    };
+  }
+
   private buildUrl(
     path: string,
     query?: Record<string, string | number | boolean | undefined>,
@@ -121,21 +151,6 @@ export class HebbianClient {
       }
     }
     return url;
-  }
-
-  /** Standard request headers including bearer auth. */
-  private headers(): Record<string, string> {
-    const h: Record<string, string> = {
-      Authorization: `Bearer ${this.token}`,
-      Accept: "application/json",
-      "User-Agent": "@hebbianvault/mcp/0.2.0",
-    };
-    // Only sent when the caller's account belongs to more than one workspace.
-    // The API resolves the single-membership case from the token alone.
-    if (this.tenant) {
-      h["X-Hebbian-Tenant"] = this.tenant;
-    }
-    return h;
   }
 
   /**
@@ -163,8 +178,9 @@ export class HebbianClient {
     const errorCode =
       errBody.code ?? errBody.error ?? `HTTP_${response.status}`;
     const message =
-      errBody.message ??
-      errBody.error ??
+      detailReason(errBody.detail) ||
+      errBody.message ||
+      errBody.error ||
       `Request failed with status ${response.status}`;
 
     throw new HebbianApiError(
