@@ -78,6 +78,7 @@ Write `~/.config/hebbian/mcp-tenant.json`:
 | `HEBBIAN_API_TOKEN` | Your token (required). `HEBBIAN_TOKEN` is also accepted. |
 | `HEBBIAN_API_URL` | Override the API base URL (Enterprise self-host). Defaults to the Hebbian SaaS API. |
 | `HEBBIAN_TENANT` | Optional workspace slug — only needed if your account belongs to more than one workspace. |
+| `HEBBIAN_GRAPH_PAGINATION` | Opt in to paginated workspace graph retrieval (`1`, `true`, `yes`, or `on`). |
 
 ## Token scope
 
