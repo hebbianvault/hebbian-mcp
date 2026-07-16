@@ -43,7 +43,7 @@ select = ["E", "F", "I", "N", "W", "ANN", "S", "B", "UP"]
 ignore = ["ANN101", "ANN102", "S101"]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**/*.py" = ["E501", "S105", "ANN401"]
+"tests/**/*.py" = ["E501", "S105", "S106", "ANN401"]
 "src/hebbianvault_mcp/client.py" = ["ANN401"]
 
 [tool.pytest.ini_options]

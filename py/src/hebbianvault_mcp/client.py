@@ -51,7 +51,10 @@ class HebbianApiError(Exception):
             tool_error = f"Permission denied ({self.error_code}): {server_reason or self}."
             if server_reason:
                 return tool_error
-            return f"{tool_error} Check that your token scope (employee/company) matches the operation."
+            return (
+                f"{tool_error} Check that your token scope "
+                "(employee/company) matches the operation."
+            )
         if self.status_code == 404:
             return f"Not found ({self.error_code}): {self}"
         if self.status_code == 429:

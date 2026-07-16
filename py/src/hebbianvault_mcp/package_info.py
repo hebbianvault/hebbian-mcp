@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
+import tomllib
 from importlib import metadata
 from pathlib import Path
-import tomllib
 
 
 def _read_package_version() -> str:
