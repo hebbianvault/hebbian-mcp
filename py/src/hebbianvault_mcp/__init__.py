@@ -13,7 +13,10 @@ Or programmatically:
     server.run()
 """
 
+from .package_info import PACKAGE_VERSION
+
+__version__ = PACKAGE_VERSION
+
 from .server import create_server, main
 
 __all__ = ["create_server", "main"]
-__version__ = "0.3.0"

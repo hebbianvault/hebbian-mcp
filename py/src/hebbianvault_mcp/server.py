@@ -26,6 +26,7 @@ from mcp.types import TextContent, Tool
 
 from .client import HebbianClient
 from .config import load_config
+from .package_info import PACKAGE_VERSION
 from .tools import TOOL_HANDLERS, TOOL_SCHEMAS
 
 logging.basicConfig(
@@ -36,7 +37,7 @@ logging.basicConfig(
 logger = logging.getLogger("hebbianvault_mcp")
 
 SERVER_NAME = "hebbianvault-mcp"
-SERVER_VERSION = "0.1.0"
+SERVER_VERSION = PACKAGE_VERSION
 
 
 def create_server() -> Server:
@@ -48,7 +49,7 @@ def create_server() -> Server:
     config = load_config()
     client = HebbianClient(api_url=config.api_url, token=config.token, tenant=config.tenant)
 
-    app = Server(SERVER_NAME)
+    app = Server(SERVER_NAME, version=SERVER_VERSION)
 
     @app.list_tools()
     async def list_tools() -> list[Tool]:  # type: ignore[override]
