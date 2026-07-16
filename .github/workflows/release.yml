@@ -91,6 +91,10 @@ jobs:
     needs: publish-npm
     runs-on: blacksmith-4vcpu-ubuntu-2404
     steps:
+      - name: Extract npm package version
+        id: ver
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
       - name: Bump tap formula
         uses: mislav/bump-homebrew-formula-action@v3
         with:
@@ -98,7 +102,7 @@ jobs:
           formula-path: Formula/hebbian-mcp.rb
           homebrew-tap: hebbianvault/homebrew-tap
           base-branch: main
-          download-url: https://registry.npmjs.org/@hebbianvault/mcp/-/mcp-${{ github.ref_name }}.tgz
+          download-url: https://registry.npmjs.org/@hebbianvault/mcp/-/mcp-${{ steps.ver.outputs.version }}.tgz
           commit-message: |
             hebbian-mcp ${{ github.ref_name }}
 
