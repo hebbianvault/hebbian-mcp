@@ -58,12 +58,15 @@ export class HebbianClient {
   private readonly apiUrl: string;
   private readonly token: string;
   private readonly tenant?: string;
+  /** Whether graph-derived tools should request UUID-keyset paginated graphs. */
+  public readonly graphPagination: boolean;
 
-  constructor(apiUrl: string, token: string, tenant?: string) {
+  constructor(apiUrl: string, token: string, tenant?: string, graphPagination = false) {
     // Normalise: strip trailing slash
     this.apiUrl = apiUrl.replace(/\/+$/, "");
     this.token = token;
     this.tenant = tenant && tenant.trim().length > 0 ? tenant.trim() : undefined;
+    this.graphPagination = graphPagination;
   }
 
   /**

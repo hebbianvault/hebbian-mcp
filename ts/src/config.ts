@@ -28,6 +28,8 @@ export interface HebbianConfig {
    * knows which workspace you are acting in. Single-workspace accounts can omit.
    */
   tenant?: string;
+  /** Opt in to UUID-keyset pagination when retrieving the workspace graph. */
+  graphPagination: boolean;
 }
 
 interface ConfigFile {
@@ -53,10 +55,13 @@ export function loadConfig(): HebbianConfig {
   // ── Tenant (optional) ────────────────────────────────────────────────────────
   const envTenant = process.env.HEBBIAN_TENANT?.trim() || undefined;
 
+  // ── Graph pagination (opt-in) ─────────────────────────────────────────────
+  const graphPagination = isTruthy(process.env.HEBBIAN_GRAPH_PAGINATION);
+
   // ── Token (env first) ──────────────────────────────────────────────────────
   const envToken = process.env.HEBBIAN_API_TOKEN ?? process.env.HEBBIAN_TOKEN;
   if (envToken && envToken.length > 0) {
-    return { apiUrl, token: envToken, tenant: envTenant };
+    return { apiUrl, token: envToken, tenant: envTenant, graphPagination };
   }
 
   // ── Token (config file) ────────────────────────────────────────────────────
@@ -68,6 +73,7 @@ export function loadConfig(): HebbianConfig {
         apiUrl: file.api_url ?? apiUrl,
         token: file.token,
         tenant: envTenant ?? file.tenant,
+        graphPagination,
       };
     }
   }
@@ -78,6 +84,11 @@ export function loadConfig(): HebbianConfig {
     "or write your token to ~/.config/hebbian/mcp-tenant.json as { \"token\": \"...\" }. " +
     "Generate a token from the AI Tools tab in your Hebbian integrations page."
   );
+}
+
+/** Accept the conventional env-var spellings for an enabled boolean flag. */
+function isTruthy(value: string | undefined): boolean {
+  return value !== undefined && ["1", "true", "yes", "on"].includes(value.trim().toLowerCase());
 }
 
 /** Resolve config file path — explicit env var or default location. */

@@ -147,7 +147,12 @@ export async function runAbsorb(argv: string[]): Promise<number> {
   }
 
   const config = loadConfig();
-  const client = new HebbianClient(config.apiUrl, config.token, config.tenant);
+  const client = new HebbianClient(
+    config.apiUrl,
+    config.token,
+    config.tenant,
+    config.graphPagination,
+  );
 
   let accepted = 0;
   let duplicates = 0;

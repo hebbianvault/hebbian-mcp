@@ -76,7 +76,12 @@ async function main(): Promise<void> {
   // Load config early — throw clearly if no token
   const config = loadConfig();
 
-  const client = new HebbianClient(config.apiUrl, config.token, config.tenant);
+  const client = new HebbianClient(
+    config.apiUrl,
+    config.token,
+    config.tenant,
+    config.graphPagination,
+  );
 
   const server = new Server(
     { name: SERVER_NAME, version: SERVER_VERSION },

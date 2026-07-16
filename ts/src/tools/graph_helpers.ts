@@ -61,13 +61,42 @@ export interface GraphNode {
 
 interface GraphResponse {
   nodes?: GraphNode[];
+  next_cursor?: string | null;
   [k: string]: unknown;
 }
 
+export const MAX_GRAPH_PAGES = 10_000;
+
 /** Fetch the full scoped workspace graph for the current token. */
 export async function fetchGraph(client: HebbianClient): Promise<GraphNode[]> {
-  const resp = (await client.get("/vault/graph")) as GraphResponse;
-  return Array.isArray(resp.nodes) ? resp.nodes : [];
+  // Preserve the legacy request exactly unless pagination is explicitly enabled.
+  if (!client.graphPagination) {
+    const resp = (await client.get("/vault/graph")) as GraphResponse;
+    return Array.isArray(resp.nodes) ? resp.nodes : [];
+  }
+
+  const nodes: GraphNode[] = [];
+  let cursor: string | undefined;
+
+  for (let page = 0; page < MAX_GRAPH_PAGES; page++) {
+    const query = cursor === undefined ? { limit: 1000 } : { limit: 1000, cursor };
+    const resp = (await client.get("/vault/graph", query)) as GraphResponse;
+
+    if (Array.isArray(resp.nodes)) nodes.push(...resp.nodes);
+    if (resp.next_cursor === null) return nodes;
+    if (typeof resp.next_cursor !== "string") {
+      if (page === 0 && resp.next_cursor === undefined) return nodes;
+      throw new Error("Hebbian MCP: Paginated graph response is missing next_cursor");
+    }
+    if (resp.next_cursor === cursor) {
+      throw new Error("Hebbian MCP: Graph pagination received a duplicate cursor");
+    }
+    cursor = resp.next_cursor;
+  }
+
+  throw new Error(
+    `Hebbian MCP: Graph pagination exceeded ${MAX_GRAPH_PAGES} pages; refusing to loop forever`,
+  );
 }
 
 /** Lower-cased haystack of a node's searchable text fields. */
