@@ -21,6 +21,7 @@ from hebbianvault_mcp.client import HebbianApiError, HebbianClient
 from hebbianvault_mcp.tools import (
     TOOL_SCHEMAS,
     UNTRUSTED_CONTENT_PREAMBLE,
+    _fetch_graph,
     _frame_untrusted_text,
     _score,
     handle_ask,
@@ -197,6 +198,7 @@ class TestGraphScopeRouting:
         assert client.get.await_args_list == [
             call("/tenant/whoami"),
             call("/vault/company-graph"),
+            call("/vault/company-graph"),
         ]
 
     @pytest.mark.asyncio
@@ -225,7 +227,7 @@ class TestGraphScopeRouting:
         await asyncio.gather(search, traverse)
 
         assert client.get.await_args_list.count(call("/tenant/whoami")) == 1
-        assert client.get.await_args_list.count(call("/vault/company-graph")) == 1
+        assert client.get.await_args_list.count(call("/vault/company-graph")) == 2
 
     @pytest.mark.asyncio
     async def test_page_two_node_is_reachable_to_traverse(self) -> None:
@@ -236,7 +238,7 @@ class TestGraphScopeRouting:
                     "nodes": [{"uuid": "n1", "edges": [{"to": "n2"}]}],
                     "next_cursor": "page-2",
                 },
-                {"nodes": [{"uuid": "n2", "edges": []}], "next_cursor": None},
+                {"nodes": [{"uuid": "n2", "edges": []}]},
             ],
         )
         client.graph_pagination = True
@@ -244,6 +246,7 @@ class TestGraphScopeRouting:
         output = json.loads(await handle_traverse(client, {"start_uuid": "n1", "max_hops": 1}))
 
         assert [node["uuid"] for node in output["nodes"]] == ["n1", "n2"]
+        assert output["truncated"] is True
         assert client.get.await_args_list[2] == call(
             "/vault/graph", {"limit": 1000, "cursor": "page-2"}
         )
@@ -272,10 +275,11 @@ class TestGraphScopeRouting:
             + [{"nodes": [], "next_cursor": f"cursor-{page}"} for page in range(10)]
         )
 
-        await handle_traverse(client, {"start_uuid": "n1"})
+        output = json.loads(await handle_traverse(client, {"start_uuid": "n1"}))
 
         assert "Graph fetch truncated after 10 pages" in caplog.text
         assert client.get.await_count == 11
+        assert output["truncated"] is True
 
     @pytest.mark.asyncio
     async def test_company_graph_is_a_single_response_when_pagination_is_enabled(self) -> None:
@@ -288,6 +292,74 @@ class TestGraphScopeRouting:
             call("/tenant/whoami"),
             call("/vault/company-graph"),
         ]
+
+    @pytest.mark.asyncio
+    async def test_capture_invalidates_paginated_graph_cache(self) -> None:
+        client = mock_client(
+            get_side_effect=[
+                {"token_scope": "employee"},
+                {"nodes": [{"uuid": "existing", "edges": []}], "next_cursor": None},
+                {"nodes": [{"uuid": "new-node", "edges": []}], "next_cursor": None},
+            ],
+            post_return={"uuid": "new-node", "created": True},
+        )
+        client.graph_pagination = True
+
+        await handle_traverse(client, {"start_uuid": "existing"})
+        await handle_capture(client, {"title": "New node", "text": "Captured now"})
+        output = json.loads(await handle_traverse(client, {"start_uuid": "new-node"}))
+
+        assert [node["uuid"] for node in output["nodes"]] == ["new-node"]
+        assert client.get.await_args_list.count(call("/vault/graph", {"limit": 1000})) == 2
+
+    @pytest.mark.asyncio
+    async def test_cancelled_cached_reader_evicts_task(self) -> None:
+        client = mock_client()
+        client.graph_pagination = True
+
+        async def cancelled() -> None:
+            raise asyncio.CancelledError
+
+        cached_task = asyncio.create_task(cancelled())
+        await asyncio.sleep(0)
+        client._graph_cache_task = cached_task
+        client._graph_cache_expires_at = float("inf")
+
+        with pytest.raises(asyncio.CancelledError):
+            await _fetch_graph(client)
+
+        assert client._graph_cache_task is None
+        assert client._graph_cache_expires_at == 0.0
+
+    @pytest.mark.asyncio
+    async def test_cancelled_fetch_owner_evicts_detached_task(self) -> None:
+        client = mock_client()
+        client.graph_pagination = True
+        client._graph_token_scope = "employee"
+        client._graph_token_scope_resolved = True
+        started = asyncio.Event()
+        release = asyncio.Event()
+
+        async def slow_get(*_args: Any) -> dict[str, Any]:
+            started.set()
+            await release.wait()
+            return {"nodes": [], "next_cursor": None}
+
+        client.get.side_effect = slow_get
+        caller = asyncio.create_task(_fetch_graph(client))
+        await started.wait()
+        detached_fetch = client._graph_cache_task
+        caller.cancel()
+
+        with pytest.raises(asyncio.CancelledError):
+            await caller
+
+        assert client._graph_cache_task is None
+        assert client._graph_cache_expires_at == 0.0
+
+        release.set()
+        assert detached_fetch is not None
+        await detached_fetch
 
 
 # ── hebbian_read_node ─────────────────────────────────────────────────────────

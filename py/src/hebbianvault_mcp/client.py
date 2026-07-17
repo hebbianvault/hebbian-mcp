@@ -121,7 +121,7 @@ class HebbianClient:
         self._graph_token_scope: str | None = None
         self._graph_token_scope_resolved = False
         self._graph_token_scope_resolution_task: asyncio.Task[None] | None = None
-        self._graph_cache_task: asyncio.Task[list[dict[str, Any]]] | None = None
+        self._graph_cache_task: asyncio.Task[tuple[list[dict[str, Any]], bool]] | None = None
         self._graph_cache_expires_at = 0.0
 
     async def get(

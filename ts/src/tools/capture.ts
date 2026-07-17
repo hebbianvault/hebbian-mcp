@@ -11,6 +11,7 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import type { HebbianClient } from "../client.js";
 import { HebbianApiError } from "../client.js";
+import { invalidateGraphCache } from "./graph_helpers.js";
 
 export const HEBBIAN_CAPTURE: Tool = {
   name: "hebbian_capture",
@@ -93,6 +94,7 @@ export async function handleCapture(
 
   try {
     const result = await client.post("/capture", body);
+    invalidateGraphCache(client);
     return JSON.stringify(result, null, 2);
   } catch (err) {
     if (err instanceof HebbianApiError) {

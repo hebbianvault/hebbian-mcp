@@ -82,10 +82,13 @@ export async function handleSearch(
 
   try {
     let ranked: Record<string, unknown>[];
+    let truncated = false;
     if (await isCompanyScope(client)) {
       // /vault/search is employee-union scoped even for company tokens. Keep
       // Plan 2.1's company-graph behaviour until the API offers an org-wide FTS view.
-      let nodes: GraphNode[] = await fetchGraph(client);
+      const graph = await fetchGraph(client);
+      let nodes: GraphNode[] = graph.nodes;
+      truncated = graph.truncated;
       if (domain) {
         const d = domain.toLowerCase();
         nodes = nodes.filter((n) => (n.domain ?? "").toLowerCase() === d);
@@ -119,6 +122,7 @@ export async function handleSearch(
       count: ranked.length,
       results: ranked,
     };
+    if (truncated) result.truncated = true;
     if (ranked.length === 0) result.message = "No matching nodes found.";
     return stringifyUntrustedResult(result);
   } catch (err) {

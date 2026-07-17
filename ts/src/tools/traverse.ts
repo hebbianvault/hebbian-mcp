@@ -76,7 +76,8 @@ export async function handleTraverse(
   const start = start_uuid.trim();
 
   try {
-    const nodes = await fetchGraph(client);
+    const graph = await fetchGraph(client);
+    const { nodes } = graph;
     const byUuid = new Map<string, GraphNode>();
     for (const n of nodes) byUuid.set(n.uuid, n);
 
@@ -89,6 +90,7 @@ export async function handleTraverse(
             "or may be outside your token's scope.",
           nodes: [],
           edges: [],
+          ...(graph.truncated ? { truncated: true } : {}),
         },
         null,
         2,
@@ -142,6 +144,7 @@ export async function handleTraverse(
         edge_count: collectedEdges.length,
         nodes: resultNodes,
         edges: collectedEdges,
+        ...(graph.truncated ? { truncated: true } : {}),
       },
     );
   } catch (err) {
