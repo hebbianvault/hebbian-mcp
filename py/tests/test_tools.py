@@ -84,6 +84,9 @@ def mock_client(
     client._graph_token_scope = None
     client._graph_token_scope_resolved = False
     client._graph_token_scope_resolution_task = None
+    client.graph_pagination = False
+    client._graph_cache_task = None
+    client._graph_cache_expires_at = 0.0
     return client  # type: ignore[return-value]
 
 
@@ -194,7 +197,6 @@ class TestGraphScopeRouting:
         assert client.get.await_args_list == [
             call("/tenant/whoami"),
             call("/vault/company-graph"),
-            call("/vault/company-graph"),
         ]
 
     @pytest.mark.asyncio
@@ -223,7 +225,69 @@ class TestGraphScopeRouting:
         await asyncio.gather(search, traverse)
 
         assert client.get.await_args_list.count(call("/tenant/whoami")) == 1
-        assert client.get.await_args_list.count(call("/vault/company-graph")) == 2
+        assert client.get.await_args_list.count(call("/vault/company-graph")) == 1
+
+    @pytest.mark.asyncio
+    async def test_page_two_node_is_reachable_to_traverse(self) -> None:
+        client = mock_client(
+            get_side_effect=[
+                {"token_scope": "employee"},
+                {
+                    "nodes": [{"uuid": "n1", "edges": [{"to": "n2"}]}],
+                    "next_cursor": "page-2",
+                },
+                {"nodes": [{"uuid": "n2", "edges": []}], "next_cursor": None},
+            ],
+        )
+        client.graph_pagination = True
+
+        output = json.loads(await handle_traverse(client, {"start_uuid": "n1", "max_hops": 1}))
+
+        assert [node["uuid"] for node in output["nodes"]] == ["n1", "n2"]
+        assert client.get.await_args_list[2] == call(
+            "/vault/graph", {"limit": 1000, "cursor": "page-2"}
+        )
+
+    @pytest.mark.asyncio
+    async def test_traverse_and_provenance_share_one_cached_graph_fetch(self) -> None:
+        client = mock_client(
+            get_side_effect=[
+                {"token_scope": "employee"},
+                {"nodes": _graph()["nodes"], "next_cursor": None},
+            ],
+        )
+        client.graph_pagination = True
+
+        await handle_traverse(client, {"start_uuid": "n1"})
+        await handle_provenance(client, {"uuid": "n1"})
+
+        assert client.get.await_args_list.count(call("/vault/graph", {"limit": 1000})) == 1
+
+    @pytest.mark.asyncio
+    async def test_warns_and_returns_when_graph_page_cap_is_hit(self, caplog: pytest.LogCaptureFixture) -> None:
+        client = mock_client()
+        client.graph_pagination = True
+        client.get = AsyncMock(
+            side_effect=[{"token_scope": "employee"}]
+            + [{"nodes": [], "next_cursor": f"cursor-{page}"} for page in range(10)]
+        )
+
+        await handle_traverse(client, {"start_uuid": "n1"})
+
+        assert "Graph fetch truncated after 10 pages" in caplog.text
+        assert client.get.await_count == 11
+
+    @pytest.mark.asyncio
+    async def test_company_graph_is_a_single_response_when_pagination_is_enabled(self) -> None:
+        client = mock_client(get_side_effect=[{"token_scope": "company"}, _graph()])
+        client.graph_pagination = True
+
+        await handle_search(client, {"q": "strategy"})
+
+        assert client.get.await_args_list == [
+            call("/tenant/whoami"),
+            call("/vault/company-graph"),
+        ]
 
 
 # ── hebbian_read_node ─────────────────────────────────────────────────────────

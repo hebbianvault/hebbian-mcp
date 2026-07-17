@@ -206,7 +206,7 @@ describe("fetchGraph", () => {
     await handleTraverse(client, { start_uuid: "n1" });
 
     expect(get.mock.calls.filter(([path]) => path === "/tenant/whoami")).toHaveLength(1);
-    expect(get.mock.calls.filter(([path]) => path === "/vault/company-graph")).toHaveLength(2);
+    expect(get.mock.calls.filter(([path]) => path === "/vault/company-graph")).toHaveLength(1);
   });
 
   test("merges pages, passes each opaque cursor verbatim, and stops on null", async () => {
@@ -238,16 +238,17 @@ describe("fetchGraph", () => {
     expect(get).toHaveBeenNthCalledWith(2, "/vault/graph", { limit: 1000 });
   });
 
-  test("throws when a later page omits next_cursor", async () => {
+  test("treats a later missing next_cursor as a complete legacy response", async () => {
     const get = jest
       .fn()
       .mockResolvedValueOnce({ token_scope: "employee" })
       .mockResolvedValueOnce({ nodes: [{ uuid: "n1" }], next_cursor: "next-page" })
       .mockResolvedValueOnce({ nodes: [{ uuid: "n2" }] });
 
-    await expect(fetchGraph(mockClient({ get, graphPagination: true }))).rejects.toThrow(
-      "missing next_cursor",
-    );
+    await expect(fetchGraph(mockClient({ get, graphPagination: true }))).resolves.toEqual([
+      { uuid: "n1" },
+      { uuid: "n2" },
+    ]);
     expect(get).toHaveBeenCalledTimes(3);
   });
 
@@ -279,13 +280,14 @@ describe("fetchGraph", () => {
     expect(get).toHaveBeenNthCalledWith(3, "/vault/graph", { limit: 1000, cursor: "" });
   });
 
-  test("throws after the page safety cap", async () => {
+  test("returns the capped graph and warns when another page remains", async () => {
     const get = jest.fn(() => ({ nodes: [], next_cursor: `cursor-${get.mock.calls.length}` }));
+    const stderr = jest.spyOn(process.stderr, "write").mockImplementation(() => true);
 
-    await expect(fetchGraph(mockClient({ get, graphPagination: true }))).rejects.toThrow(
-      `exceeded ${MAX_GRAPH_PAGES} pages`,
-    );
+    await expect(fetchGraph(mockClient({ get, graphPagination: true }))).resolves.toEqual([]);
     expect(get).toHaveBeenCalledTimes(MAX_GRAPH_PAGES + 1);
+    expect(stderr).toHaveBeenCalledWith(expect.stringContaining("Graph fetch truncated after 10 pages"));
+    stderr.mockRestore();
   });
 
   test("propagates API errors unchanged", async () => {
@@ -293,6 +295,50 @@ describe("fetchGraph", () => {
     const get = jest.fn().mockRejectedValue(apiError);
 
     await expect(fetchGraph(mockClient({ get, graphPagination: true }))).rejects.toBe(apiError);
+  });
+
+  test("makes a page-two node reachable to traverse", async () => {
+    const get = jest
+      .fn()
+      .mockResolvedValueOnce({ token_scope: "employee" })
+      .mockResolvedValueOnce({
+        nodes: [{ uuid: "n1", edges: [{ to: "n2" }] }],
+        next_cursor: "page-2",
+      })
+      .mockResolvedValueOnce({ nodes: [{ uuid: "n2", edges: [] }], next_cursor: null });
+
+    const output = JSON.parse(await handleTraverse(mockClient({ get, graphPagination: true }), {
+      start_uuid: "n1",
+      max_hops: 1,
+    }));
+
+    expect(output.nodes.map((node: { uuid: string }) => node.uuid)).toEqual(["n1", "n2"]);
+    expect(get).toHaveBeenNthCalledWith(3, "/vault/graph", { limit: 1000, cursor: "page-2" });
+  });
+
+  test("shares one cached graph fetch between traverse and provenance", async () => {
+    const get = jest
+      .fn()
+      .mockResolvedValueOnce({ token_scope: "employee" })
+      .mockResolvedValueOnce({ nodes: graph().nodes, next_cursor: null });
+    const client = mockClient({ get, graphPagination: true });
+
+    await handleTraverse(client, { start_uuid: "n1" });
+    await handleProvenance(client, { uuid: "n1" });
+
+    expect(get.mock.calls.filter(([path]) => path === "/vault/graph")).toHaveLength(1);
+  });
+
+  test("uses a single unpaginated company graph response when pagination is enabled", async () => {
+    const get = jest
+      .fn()
+      .mockResolvedValueOnce({ token_scope: "company" })
+      .mockResolvedValueOnce(graph());
+
+    await fetchGraph(mockClient({ get, graphPagination: true }));
+
+    expect(get).toHaveBeenNthCalledWith(2, "/vault/company-graph");
+    expect(get).not.toHaveBeenCalledWith("/vault/company-graph", expect.anything());
   });
 });
 

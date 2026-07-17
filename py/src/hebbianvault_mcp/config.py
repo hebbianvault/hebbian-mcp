@@ -35,6 +35,9 @@ class HebbianConfig:
     tenant: str | None = None
     """Optional workspace slug; sent as X-Hebbian-Tenant when set."""
 
+    graph_pagination: bool = False
+    """Whether graph-backed tools opt into cursor pagination."""
+
 
 def load_config() -> HebbianConfig:
     """
@@ -50,11 +53,17 @@ def load_config() -> HebbianConfig:
     """
     api_url = os.environ.get("HEBBIAN_API_URL", DEFAULT_API_URL)
     env_tenant = (os.environ.get("HEBBIAN_TENANT") or "").strip() or None
+    graph_pagination = _is_truthy(os.environ.get("HEBBIAN_GRAPH_PAGINATION"))
 
     # ── Token from env ─────────────────────────────────────────────────────────
     env_token = os.environ.get("HEBBIAN_API_TOKEN") or os.environ.get("HEBBIAN_TOKEN")
     if env_token:
-        return HebbianConfig(api_url=api_url, token=env_token, tenant=env_tenant)
+        return HebbianConfig(
+            api_url=api_url,
+            token=env_token,
+            tenant=env_tenant,
+            graph_pagination=graph_pagination,
+        )
 
     # ── Token from config file ─────────────────────────────────────────────────
     config_path = _resolve_config_path()
@@ -65,6 +74,7 @@ def load_config() -> HebbianConfig:
                 api_url=file_cfg.get("api_url", api_url),
                 token=file_cfg["token"],
                 tenant=env_tenant or file_cfg.get("tenant"),
+                graph_pagination=graph_pagination,
             )
 
     raise RuntimeError(
@@ -91,6 +101,11 @@ def _resolve_config_path() -> Path | None:
     home = Path.home()
     default = home / ".config" / "hebbian" / "mcp-tenant.json"
     return default if default.exists() else None
+
+
+def _is_truthy(value: str | None) -> bool:
+    """Accept the conventional environment spellings for enabled flags."""
+    return value is not None and value.strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _read_config_file(path: Path) -> dict[str, str]:

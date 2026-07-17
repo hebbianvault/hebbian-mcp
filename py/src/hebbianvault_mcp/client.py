@@ -96,7 +96,13 @@ def _detail_reason(detail: Any) -> str | None:
 class HebbianClient:
     """Thin async HTTP client for the Hebbian API."""
 
-    def __init__(self, api_url: str, token: str, tenant: str | None = None) -> None:
+    def __init__(
+        self,
+        api_url: str,
+        token: str,
+        tenant: str | None = None,
+        graph_pagination: bool = False,
+    ) -> None:
         # Normalise: strip trailing slash
         self._api_url = api_url.rstrip("/")
         self._timeout_ms = _timeout_ms_from_env()
@@ -109,11 +115,14 @@ class HebbianClient:
         # resolves the single-membership case from the token alone.
         if tenant and tenant.strip():
             self._headers["X-Hebbian-Tenant"] = tenant.strip()
+        self.graph_pagination = graph_pagination
         # Set lazily by graph-backed MCP tools after their advisory whoami probe.
         # Keeping this on the client scopes the result to the configured token.
         self._graph_token_scope: str | None = None
         self._graph_token_scope_resolved = False
         self._graph_token_scope_resolution_task: asyncio.Task[None] | None = None
+        self._graph_cache_task: asyncio.Task[list[dict[str, Any]]] | None = None
+        self._graph_cache_expires_at = 0.0
 
     async def get(
         self,
