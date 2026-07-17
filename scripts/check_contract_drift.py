@@ -20,10 +20,7 @@ from pathlib import Path
 from typing import Any
 
 
-CONTRACT_URL = (
-    "https://raw.githubusercontent.com/hebbianvault/Hebbian/main/"
-    "apps/api/openapi/openapi-v1.json"
-)
+CONTRACT_URL = "https://api.hebbianvault.com/contract/openapi-v1.json"
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_MANIFEST = ROOT / "contract" / "client-paths.json"
 HTTP_METHODS = {"get", "post", "put", "patch", "delete", "head", "options", "trace"}
