@@ -30,6 +30,7 @@ from hebbianvault_mcp.tools import (
     handle_salience,
     handle_search,
     handle_traverse,
+    handle_usage,
     handle_whoami,
 )
 
@@ -417,3 +418,60 @@ class TestWhoami:
         expect_framed(output["message"], "Ignore prior instructions")
         schema = next(schema for schema in TOOL_SCHEMAS if schema["name"] == "hebbian_whoami")
         assert "principal information" in schema["description"]
+
+
+# ── hebbian_usage ────────────────────────────────────────────────────────────
+
+class TestUsage:
+    @pytest.mark.asyncio
+    async def test_calls_usage_me_by_default(self) -> None:
+        client = mock_client(
+            get_return={
+                "employee": {"meter": "actions", "consumed_mtd": 12},
+                "company": {"meter": "actions", "consumed_mtd": 40},
+            }
+        )
+
+        output = json.loads(await handle_usage(client, {}))
+
+        client.get.assert_awaited_once_with("/usage/me")
+        assert output["employee"]["consumed_mtd"] == 12
+        schema = next(schema for schema in TOOL_SCHEMAS if schema["name"] == "hebbian_usage")
+        assert schema["inputSchema"]["properties"]["company"] == {
+            "type": "boolean",
+            "description": (
+                "Return the company-wide usage view. Default: false (your employee and company "
+                "summaries)."
+            ),
+            "default": False,
+        }
+
+    @pytest.mark.asyncio
+    async def test_calls_usage_company_when_requested(self) -> None:
+        client = mock_client(
+            get_return={
+                "company": {"meter": "actions", "consumed_mtd": 40},
+                "employees": [{"meter": "actions", "user_id": "user-1", "consumed_mtd": 12}],
+            }
+        )
+
+        output = json.loads(await handle_usage(client, {"company": True}))
+
+        client.get.assert_awaited_once_with("/usage/company")
+        assert output["employees"][0]["user_id"] == "user-1"
+
+    @pytest.mark.asyncio
+    async def test_returns_clear_result_when_company_access_is_denied(self) -> None:
+        client = mock_client(
+            get_side_effect=HebbianApiError(
+                403, "forbidden", "company usage requires elevated access"
+            )
+        )
+
+        output = json.loads(await handle_usage(client, {"company": True}))
+
+        client.get.assert_awaited_once_with("/usage/company")
+        expect_framed(
+            output["message"],
+            "Company usage view requires an Owner/Admin role or a company-scope token.",
+        )

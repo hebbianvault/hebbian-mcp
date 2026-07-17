@@ -9,7 +9,7 @@
  * Auth: set HEBBIAN_API_TOKEN (or HEBBIAN_TOKEN) env var, or write a config
  * file at ~/.config/hebbian/mcp-tenant.json with { "token": "hbn_..." }.
  *
- * 10 tools:
+ * 11 tools:
  *   hebbian_read_node       — fetch a node by UUID
  *   hebbian_search          — search the workspace for matching nodes
  *   hebbian_ask             — synthesis Q&A returned with source quotes
@@ -20,6 +20,7 @@
  *   hebbian_salience        — salience/activity history for a node
  *   hebbian_recent_activity — recent workspace activity timeline
  *   hebbian_whoami          — token identity, tenant, role, and scope
+ *   hebbian_usage           — usage and spend-meter summary
  *
  * All access control is enforced server-side by the API. What a token can
  * read and write is determined by its scope; this package is a thin client.
@@ -49,6 +50,7 @@ import {
   HEBBIAN_SALIENCE, handleSalience,
   HEBBIAN_RECENT_ACTIVITY, handleRecentActivity,
   HEBBIAN_WHOAMI, handleWhoami,
+  HEBBIAN_USAGE, handleUsage,
 } from "./tools/index.js";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -66,6 +68,7 @@ const TOOLS = [
   HEBBIAN_SALIENCE,
   HEBBIAN_RECENT_ACTIVITY,
   HEBBIAN_WHOAMI,
+  HEBBIAN_USAGE,
 ] as const;
 
 // ── Boot ───────────────────────────────────────────────────────────────────────
@@ -154,6 +157,9 @@ async function main(): Promise<void> {
           break;
         case "hebbian_whoami":
           result = await handleWhoami(client);
+          break;
+        case "hebbian_usage":
+          result = await handleUsage(client, args as { company?: boolean });
           break;
         default:
           return {
