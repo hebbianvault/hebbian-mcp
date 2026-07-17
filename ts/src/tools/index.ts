@@ -1,7 +1,7 @@
 /**
  * src/tools/index.ts
  *
- * Re-exports all 11 tool definitions for @hebbianvault/mcp.
+ * Re-exports all 13 tool definitions for @hebbianvault/mcp.
  */
 
 export { HEBBIAN_READ_NODE, handleReadNode } from "./read_node.js";
@@ -15,3 +15,5 @@ export { HEBBIAN_SALIENCE, handleSalience } from "./salience.js";
 export { HEBBIAN_RECENT_ACTIVITY, handleRecentActivity } from "./recent_activity.js";
 export { HEBBIAN_WHOAMI, handleWhoami } from "./whoami.js";
 export { HEBBIAN_USAGE, handleUsage } from "./usage.js";
+export { HEBBIAN_GDPR_EXPORT, handleGdprExport } from "./export.js";
+export { HEBBIAN_AUDIT_LOG, handleAuditLog } from "./audit_log.js";
