@@ -1,6 +1,6 @@
 # hebbianvault-mcp (Python)
 
-Python sibling of `@hebbianvault/mcp`. Connect a Python MCP host to your Hebbian workspace with the same 9 tools and the same configuration. A thin client; all intelligence and access control live in the Hebbian service.
+Python sibling of `@hebbianvault/mcp`. Connect a Python MCP host to your Hebbian workspace with the same 10 tools and the same configuration. A thin client; all intelligence and access control live in the Hebbian service.
 
 ## Quick start
 
@@ -61,6 +61,7 @@ Your token decides what the adapter can see and do — a personal-workspace toke
 | `hebbian_provenance` | See where a node's knowledge came from |
 | `hebbian_salience` | See a node's recent activity over time |
 | `hebbian_recent_activity` | Catch up on recent changes in your workspace |
+| `hebbian_whoami` | Show the tenant, role, scope, and principal for your token |
 
 Results only ever include what your token is allowed to see.
 

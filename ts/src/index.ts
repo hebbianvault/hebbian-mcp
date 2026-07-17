@@ -9,7 +9,7 @@
  * Auth: set HEBBIAN_API_TOKEN (or HEBBIAN_TOKEN) env var, or write a config
  * file at ~/.config/hebbian/mcp-tenant.json with { "token": "hbn_..." }.
  *
- * 9 tools:
+ * 10 tools:
  *   hebbian_read_node       — fetch a node by UUID
  *   hebbian_search          — search the workspace for matching nodes
  *   hebbian_ask             — synthesis Q&A returned with source quotes
@@ -19,6 +19,7 @@
  *   hebbian_provenance      — source trail for a node
  *   hebbian_salience        — salience/activity history for a node
  *   hebbian_recent_activity — recent workspace activity timeline
+ *   hebbian_whoami          — token identity, tenant, role, and scope
  *
  * All access control is enforced server-side by the API. What a token can
  * read and write is determined by its scope; this package is a thin client.
@@ -36,6 +37,7 @@ import { HebbianClient } from "./client.js";
 import { SERVER_NAME, SERVER_VERSION } from "./server_info.js";
 import { printBanner } from "./banner.js";
 import { runAbsorb } from "./absorb/cli.js";
+import { startServingAfterHealthCheck } from "./server_startup.js";
 import {
   HEBBIAN_READ_NODE, handleReadNode,
   HEBBIAN_SEARCH, handleSearch,
@@ -46,6 +48,7 @@ import {
   HEBBIAN_PROVENANCE, handleProvenance,
   HEBBIAN_SALIENCE, handleSalience,
   HEBBIAN_RECENT_ACTIVITY, handleRecentActivity,
+  HEBBIAN_WHOAMI, handleWhoami,
 } from "./tools/index.js";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -62,6 +65,7 @@ const TOOLS = [
   HEBBIAN_PROVENANCE,
   HEBBIAN_SALIENCE,
   HEBBIAN_RECENT_ACTIVITY,
+  HEBBIAN_WHOAMI,
 ] as const;
 
 // ── Boot ───────────────────────────────────────────────────────────────────────
@@ -148,6 +152,9 @@ async function main(): Promise<void> {
             limit?: number;
           });
           break;
+        case "hebbian_whoami":
+          result = await handleWhoami(client);
+          break;
         default:
           return {
             content: [{ type: "text", text: `Unknown tool: ${name}` }],
@@ -169,7 +176,9 @@ async function main(): Promise<void> {
 
   // ── Transport ──────────────────────────────────────────────────────────────
   const transport = new StdioServerTransport();
-  await server.connect(transport);
+  // The probe is advisory: a transient API or credential problem must not stop
+  // a host from starting and surfacing the issue to its user.
+  await startServingAfterHealthCheck(client, () => server.connect(transport));
 
   // Log to stderr only (stdout is the MCP wire)
   process.stderr.write(

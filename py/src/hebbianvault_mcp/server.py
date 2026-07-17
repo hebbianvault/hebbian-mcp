@@ -18,14 +18,15 @@ from __future__ import annotations
 import asyncio
 import logging
 import sys
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
 
-from .client import HebbianClient
-from .config import load_config
+from .client import HebbianApiError, HebbianClient
+from .config import HebbianConfig, load_config
 from .package_info import PACKAGE_VERSION
 from .tools import TOOL_HANDLERS, TOOL_SCHEMAS
 
@@ -40,14 +41,21 @@ SERVER_NAME = "hebbianvault-mcp"
 SERVER_VERSION = PACKAGE_VERSION
 
 
-def create_server() -> Server:
+def create_server(
+    config: HebbianConfig | None = None,
+    client: HebbianClient | None = None,
+) -> Server:
     """
     Create and configure the Hebbian MCP server.
 
     Call server.run() or use as an async context to start serving.
     """
-    config = load_config()
-    client = HebbianClient(api_url=config.api_url, token=config.token, tenant=config.tenant)
+    config = config or load_config()
+    client = client or HebbianClient(
+        api_url=config.api_url,
+        token=config.token,
+        tenant=config.tenant,
+    )
 
     app = Server(SERVER_NAME, version=SERVER_VERSION)
 
@@ -88,11 +96,52 @@ def create_server() -> Server:
     return app
 
 
+def _startup_health_hint(error: Exception) -> str:
+    """Turn a startup probe failure into a safe, actionable stderr hint."""
+    if isinstance(error, HebbianApiError):
+        if error.status_code == 401:
+            return (
+                "authentication rejected (401). Your token may be invalid, expired, or revoked. "
+                "Generate a new token from the AI Tools tab in your Hebbian integrations page."
+            )
+        if error.status_code == 403:
+            return "access denied (403). Check that the token scope and selected tenant are valid."
+    return "API unreachable or unavailable. Check your network connection and HEBBIAN_API_URL."
+
+
+def _write_stderr(line: str) -> None:
+    print(line, file=sys.stderr)
+
+
+async def run_startup_health_check(
+    client: HebbianClient,
+    write_stderr: Callable[[str], None] = _write_stderr,
+) -> None:
+    """Check API reachability and token identity without preventing MCP startup."""
+    try:
+        await client.get("/healthz")
+        await client.get("/tenant/whoami")
+    except Exception as exc:  # noqa: BLE001 - startup probes must never crash serving
+        write_stderr(f"[hebbian-mcp] Startup health check failed: {_startup_health_hint(exc)}")
+
+
+async def start_serving_after_health_check(
+    client: HebbianClient,
+    start_serving: Callable[[], Awaitable[None]],
+    write_stderr: Callable[[str], None] = _write_stderr,
+) -> None:
+    """Run the advisory probe before the MCP transport begins serving."""
+    await run_startup_health_check(client, write_stderr)
+    await start_serving()
+
+
 def main() -> None:
     """Entry point for `hebbian-mcp` CLI command."""
-    server = create_server()
+    config = load_config()
+    client = HebbianClient(api_url=config.api_url, token=config.token, tenant=config.tenant)
+    server = create_server(config=config, client=client)
 
-    async def _run() -> None:
+    async def _serve() -> None:
         async with stdio_server() as (read_stream, write_stream):
             await server.run(
                 read_stream,
@@ -101,7 +150,7 @@ def main() -> None:
             )
 
     try:
-        asyncio.run(_run())
+        asyncio.run(start_serving_after_health_check(client, _serve))
     except KeyboardInterrupt:
         pass
 

@@ -4,13 +4,19 @@ from __future__ import annotations
 
 import tomllib
 from pathlib import Path
+from unittest.mock import AsyncMock, MagicMock, call
 
 import httpx
 import pytest
 
 from hebbianvault_mcp.client import HebbianApiError, HebbianClient
 from hebbianvault_mcp.config import HebbianConfig
-from hebbianvault_mcp.server import SERVER_VERSION, create_server
+from hebbianvault_mcp.server import (
+    SERVER_VERSION,
+    create_server,
+    run_startup_health_check,
+    start_serving_after_health_check,
+)
 
 
 class TestErrorResponses:
@@ -82,3 +88,52 @@ def test_handshake_version_matches_package_metadata(monkeypatch: pytest.MonkeyPa
 
     assert SERVER_VERSION == package_metadata["project"]["version"]
     assert server.create_initialization_options().server_version == SERVER_VERSION
+
+
+@pytest.mark.asyncio
+async def test_startup_probe_reports_garbage_token_before_tool_handling(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    client = MagicMock(spec=HebbianClient)
+    client.get = AsyncMock(
+        side_effect=[
+            {"ok": True},
+            HebbianApiError(401, "invalid_token", "garbage token"),
+        ]
+    )
+
+    await run_startup_health_check(client)
+
+    assert client.get.await_args_list == [call("/healthz"), call("/tenant/whoami")]
+    stderr = capsys.readouterr().err
+    assert stderr.count("Startup health check failed") == 1
+    assert "authentication rejected (401)" in stderr
+    assert "Generate a new token" in stderr
+    assert "garbage token" not in stderr
+
+
+@pytest.mark.asyncio
+async def test_garbage_token_diagnostic_precedes_mcp_transport_serving() -> None:
+    client = MagicMock(spec=HebbianClient)
+    client.get = AsyncMock(
+        side_effect=[
+            {"ok": True},
+            HebbianApiError(401, "invalid_token", "garbage token"),
+        ]
+    )
+    events: list[str] = []
+
+    async def connect_transport() -> None:
+        events.append("transport-connected")
+
+    await start_serving_after_health_check(
+        client,
+        connect_transport,
+        lambda line: events.append(f"stderr:{line}"),
+    )
+
+    assert len(events) == 2
+    assert "authentication rejected (401)" in events[0]
+    assert "Generate a new token" in events[0]
+    assert "garbage token" not in events[0]
+    assert events[1] == "transport-connected"

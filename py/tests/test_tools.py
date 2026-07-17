@@ -30,6 +30,7 @@ from hebbianvault_mcp.tools import (
     handle_salience,
     handle_search,
     handle_traverse,
+    handle_whoami,
 )
 
 
@@ -389,3 +390,22 @@ class TestRecentActivity:
         client = mock_client()
         with pytest.raises(ValueError, match="valid ISO 8601"):
             await handle_recent_activity(client, {"since": "not-a-date"})
+
+
+# ── hebbian_whoami ───────────────────────────────────────────────────────────
+
+class TestWhoami:
+    @pytest.mark.asyncio
+    async def test_calls_tenant_whoami_and_returns_server_identity(self) -> None:
+        identity = {
+            "tenant_slug": "acme",
+            "role": "admin",
+            "token_scope": "company",
+            "principal_type": "human",
+        }
+        client = mock_client(get_return=identity)
+
+        result = await handle_whoami(client, {})
+
+        client.get.assert_awaited_once_with("/tenant/whoami")
+        assert json.loads(result) == identity
