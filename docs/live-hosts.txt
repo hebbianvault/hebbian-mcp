@@ -1,0 +1,7 @@
+Claude Code
+Codex (CLI + Desktop app)
+Gemini CLI
+Claude Desktop
+Cowork
+Cursor
+Generic Agent

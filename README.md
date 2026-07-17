@@ -8,7 +8,7 @@
 [![PyPI](https://img.shields.io/pypi/v/hebbianvault-mcp?logo=pypi&logoColor=white)](https://pypi.org/project/hebbianvault-mcp/)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
-Customer-installable adapter that connects Claude Code, Claude Desktop, Cursor, and any MCP-compatible agent to your Hebbian workspace.
+Customer-installable adapter that connects Claude Code, Codex, Gemini CLI, Claude Desktop, Cowork, Cursor, and any MCP-compatible agent to your Hebbian workspace.
 
 The adapter is a thin client. Your token goes in; the Hebbian service decides what you can read and write. This package contains no business logic — it is intentionally small and auditable before you paste a credential.
 
@@ -43,12 +43,33 @@ npm install -g @hebbianvault/mcp
 
 Generate a token from your Hebbian integrations page (AI Tools tab → Generate token), then add the server to your MCP host.
 
+Use the configuration for your host below. Replace `your_token_here` with the token you generated.
+
 ### Claude Code
 
 ```bash
-claude mcp add hebbian \
-  -e HEBBIAN_API_TOKEN=your_token_here \
-  -- npx -y @hebbianvault/mcp
+claude mcp add hebbian -e HEBBIAN_API_TOKEN=your_token_here -- npx -y @hebbianvault/mcp
+```
+
+### Codex (CLI + Desktop app)
+
+```bash
+codex mcp add hebbian --env HEBBIAN_API_TOKEN=your_token_here -- npx -y @hebbianvault/mcp
+```
+
+For the Codex desktop app, add this to `~/.codex/config.toml`, or use Settings → MCP servers:
+
+```toml
+[mcp_servers.hebbian]
+command = "npx"
+args = ["-y", "@hebbianvault/mcp"]
+env = { HEBBIAN_API_TOKEN = "your_token_here" }
+```
+
+### Gemini CLI
+
+```bash
+gemini mcp add hebbian -e HEBBIAN_API_TOKEN=your_token_here npx -y @hebbianvault/mcp
 ```
 
 ### Claude Desktop
@@ -61,9 +82,21 @@ Add to `~/Library/Application Support/Claude/claude_desktop_config.json`:
     "hebbian": {
       "command": "npx",
       "args": ["-y", "@hebbianvault/mcp"],
-      "env": {
-        "HEBBIAN_API_TOKEN": "your_token_here"
-      }
+      "env": { "HEBBIAN_API_TOKEN": "your_token_here" }
+    }
+  }
+}
+```
+
+### Cowork
+
+```json
+{
+  "mcpServers": {
+    "hebbian": {
+      "command": "npx",
+      "args": ["-y", "@hebbianvault/mcp"],
+      "env": { "HEBBIAN_API_TOKEN": "your_token_here" }
     }
   }
 }
@@ -79,12 +112,25 @@ Add to `.cursor/mcp.json`:
     "hebbian": {
       "command": "npx",
       "args": ["-y", "@hebbianvault/mcp"],
-      "env": {
-        "HEBBIAN_API_TOKEN": "your_token_here"
-      }
+      "env": { "HEBBIAN_API_TOKEN": "your_token_here" }
     }
   }
 }
+```
+
+### Generic Agent
+
+For an MCP-compatible agent that accepts a standard input/output command:
+
+```bash
+HEBBIAN_API_TOKEN=your_token_here npx -y @hebbianvault/mcp
+```
+
+Or use the Python package:
+
+```bash
+# pip install hebbianvault-mcp   (or: uv add hebbianvault-mcp)
+HEBBIAN_API_TOKEN=your_token_here hebbian-mcp
 ```
 
 ## Quick start (Python)
