@@ -1,5 +1,5 @@
 """
-hebbianvault_mcp.tools — All 8 Hebbian MCP tool definitions + handlers.
+hebbianvault_mcp.tools — All 10 Hebbian MCP tool definitions + handlers.
 
 Each tool handler takes a HebbianClient and returns a JSON-serialisable string.
 
@@ -321,6 +321,18 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
             "additionalProperties": False,
         },
     },
+    {
+        "name": "hebbian_whoami",
+        "description": (
+            "Show the identity verified for the configured Hebbian token. Returns the "
+            "tenant slug, role, token scope, and principal information."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": False,
+        },
+    },
 ]
 
 
@@ -619,6 +631,16 @@ async def handle_recent_activity(client: HebbianClient, args: dict[str, Any]) ->
         raise RuntimeError(exc.to_tool_error()) from exc
 
 
+async def handle_whoami(client: HebbianClient, args: dict[str, Any]) -> str:
+    """Return server-derived identity data for the configured token."""
+    del args
+    try:
+        result = await client.get("/tenant/whoami")
+        return _stringify_untrusted_result(result)
+    except HebbianApiError as exc:
+        raise RuntimeError(exc.to_tool_error()) from exc
+
+
 # ── Dispatch table (tool name → handler) ──────────────────────────────────────
 
 TOOL_HANDLERS: dict[str, Any] = {
@@ -631,6 +653,7 @@ TOOL_HANDLERS: dict[str, Any] = {
     "hebbian_provenance": handle_provenance,
     "hebbian_salience": handle_salience,
     "hebbian_recent_activity": handle_recent_activity,
+    "hebbian_whoami": handle_whoami,
 }
 
 

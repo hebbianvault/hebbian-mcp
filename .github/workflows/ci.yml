@@ -14,6 +14,31 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  docs:
+    name: Documentation
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check live host README sections
+        run: |
+          host_count=$(grep -cve '^[[:space:]]*$' docs/live-hosts.txt || true)
+          if [ "$host_count" -ne 7 ]; then
+            echo "docs/live-hosts.txt must contain exactly 7 host names"
+            exit 1
+          fi
+
+          while IFS= read -r host; do
+            [ -z "$host" ] && continue
+            for readme in README.md ts/README.md py/README.md; do
+              grep -Fqx "### ${host}" "$readme" || {
+                echo "$readme is missing the ${host} host section"
+                exit 1
+              }
+            done
+          done < docs/live-hosts.txt
+
   contract-drift:
     name: Contract drift
     runs-on: blacksmith-4vcpu-ubuntu-2404
