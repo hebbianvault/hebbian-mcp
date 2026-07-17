@@ -23,11 +23,20 @@ jobs:
 
       - name: Check live host README sections
         run: |
+          host_count=$(grep -cve '^[[:space:]]*$' docs/live-hosts.txt || true)
+          if [ "$host_count" -ne 7 ]; then
+            echo "docs/live-hosts.txt must contain exactly 7 host names"
+            exit 1
+          fi
+
           while IFS= read -r host; do
-            grep -Fqx "### ${host}" README.md || {
-              echo "README.md is missing the ${host} host section"
-              exit 1
-            }
+            [ -z "$host" ] && continue
+            for readme in README.md ts/README.md py/README.md; do
+              grep -Fqx "### ${host}" "$readme" || {
+                echo "$readme is missing the ${host} host section"
+                exit 1
+              }
+            done
           done < docs/live-hosts.txt
 
   contract-drift:
