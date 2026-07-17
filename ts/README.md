@@ -128,14 +128,14 @@ Write `~/.config/hebbian/mcp-tenant.json`:
 
 ## Token scope
 
-Your token decides what the adapter can see and do — a personal-workspace token gives access to your own knowledge; a company-workspace token gives access to the shared company workspace (where your role allows). Scope is decided by the Hebbian service. Graph-backed search, traverse, and provenance tools route company-scoped tokens to the company graph and other tokens to the workspace graph. If the advisory scope probe fails, the adapter caches the employee-graph fallback for its process lifetime; restarting the MCP process clears that cached fallback.
+Your token decides what the adapter can see and do — a personal-workspace token gives access to your own knowledge; a company-workspace token gives access to the shared company workspace (where your role allows). Scope is decided by the Hebbian service. Search uses server-side full-text retrieval for employee-scope tokens. Traverse and provenance route company-scoped tokens to the company graph and other tokens to the workspace graph; search retains that company-graph path until an org-wide search endpoint is available. If the advisory scope probe fails, the adapter caches the employee fallback for its process lifetime; restarting the MCP process clears that cached fallback.
 
 ## Tools
 
 | Tool | What it does |
 |---|---|
 | `hebbian_read_node` | Read a single node by UUID (content, metadata, connected edges) |
-| `hebbian_search` | Find nodes in your workspace matching a query |
+| `hebbian_search` | Full-text search nodes by title, summary, and note body |
 | `hebbian_ask` | Ask a question and get an answer backed by source quotes |
 | `hebbian_context` | Describe a task and a token budget, get back a salience-ranked context pack that fits |
 | `hebbian_capture` | Write a note into your workspace |

@@ -22,6 +22,7 @@ from hebbianvault_mcp.tools import (
     TOOL_SCHEMAS,
     UNTRUSTED_CONTENT_PREAMBLE,
     _frame_untrusted_text,
+    _score,
     handle_ask,
     handle_capture,
     handle_context,
@@ -141,16 +142,16 @@ class TestGraphScopeRouting:
         ]
 
     @pytest.mark.asyncio
-    async def test_whoami_without_token_scope_routes_search_to_employee_graph(self) -> None:
+    async def test_whoami_without_token_scope_routes_search_to_employee_fts(self) -> None:
         client = mock_client(
-            get_side_effect=[{"tenant_slug": "acme"}, _graph()],
+            get_side_effect=[{"tenant_slug": "acme"}, {"results": []}],
         )
 
         await handle_search(client, {"q": "strategy"})
 
         assert client.get.await_args_list == [
             call("/tenant/whoami"),
-            call("/vault/graph"),
+            call("/vault/search", {"q": "strategy", "limit": 10}),
         ]
 
     @pytest.mark.asyncio
@@ -257,31 +258,101 @@ class TestReadNode:
             await handle_read_node(client, {"uuid": self.UUID})
 
 
-# ── hebbian_search (graph-derived) ─────────────────────────────────────────────
+# ── hebbian_search ─────────────────────────────────────────────────────────────
 
 class TestSearch:
     @pytest.mark.asyncio
-    async def test_fetches_graph_and_ranks(self) -> None:
-        client = mock_client(get_return=_graph())
-        out = json.loads(await handle_search(client, {"q": "strategy roadmap", "limit": 5}))
-        assert client.get.await_args_list == [call("/tenant/whoami"), call("/vault/graph")]
-        assert out["count"] > 0
-        assert out["results"][0]["uuid"] == "n1"
-        expect_framed(out["results"][0]["title"], "2026 Company Strategy")
-        expect_framed(out["results"][0]["snippet"], "The annual company strategy and roadmap.")
-        assert "snippet" in out["results"][0]
+    async def test_returns_a_body_only_match_from_fts_without_a_graph_scan(self) -> None:
+        fixture = {
+            "uuid": "body-only",
+            "title": "Meeting notes",
+            "summary": "No matching term appears in this summary.",
+            "domain": "Company",
+            "archetype": "MOLECULE",
+        }
+        client = mock_client(
+            get_side_effect=[
+                {"token_scope": "employee"},
+                {
+                    "results": [fixture]
+                },
+            ]
+        )
+        terms = ["body-only-term"]
+        out = json.loads(await handle_search(client, {"q": "body-only-term", "limit": 5}))
+        assert _score(fixture, terms) == 0
+        assert client.get.await_args_list == [
+            call("/tenant/whoami"),
+            call("/vault/search", {"q": "body-only-term", "limit": 5}),
+        ]
+        assert out["results"][0]["uuid"] == "body-only"
+        expect_framed(out["results"][0]["title"], "Meeting notes")
+        expect_framed(out["results"][0]["snippet"], "No matching term appears in this summary.")
 
     @pytest.mark.asyncio
     async def test_filters_by_domain(self) -> None:
-        client = mock_client(get_return=_graph())
+        client = mock_client(
+            get_side_effect=[
+                {"token_scope": "employee"},
+                {
+                    "results": [
+                        {"uuid": "company", "title": "Roadmap", "domain": "Company"},
+                        {"uuid": "crm", "title": "Roadmap", "domain": "CRM"},
+                    ]
+                },
+            ]
+        )
         out = json.loads(await handle_search(client, {"q": "roadmap", "domain": "Company"}))
         assert all(r["domain"] == "Company" for r in out["results"])
 
     @pytest.mark.asyncio
-    async def test_clamps_limit(self) -> None:
-        client = mock_client(get_return=_graph())
-        out = json.loads(await handle_search(client, {"q": "strategy", "limit": 999}))
-        assert out["count"] <= 50
+    async def test_fetches_client_max_before_filtering_employee_fts_results_by_domain(self) -> None:
+        client = mock_client(
+            get_side_effect=[
+                {"token_scope": "employee"},
+                {
+                    "results": [
+                        {"uuid": "crm-1", "title": "Roadmap", "domain": "CRM"},
+                        {"uuid": "crm-2", "title": "Roadmap", "domain": "CRM"},
+                        {"uuid": "company-match", "title": "Roadmap", "domain": "Company"},
+                    ]
+                },
+            ]
+        )
+
+        out = json.loads(
+            await handle_search(client, {"q": "roadmap", "domain": "Company", "limit": 2})
+        )
+
+        assert client.get.await_args_list == [
+            call("/tenant/whoami"),
+            call("/vault/search", {"q": "roadmap", "limit": 50}),
+        ]
+        assert [result["uuid"] for result in out["results"]] == ["company-match"]
+
+    @pytest.mark.asyncio
+    async def test_passes_clamped_limit_to_fts(self) -> None:
+        client = mock_client(get_side_effect=[{"token_scope": "employee"}, {"results": []}])
+        await handle_search(client, {"q": "strategy", "limit": 999})
+        assert client.get.await_args_list == [
+            call("/tenant/whoami"),
+            call("/vault/search", {"q": "strategy", "limit": 50}),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_empty_results_include_a_sane_message(self) -> None:
+        client = mock_client(get_side_effect=[{"token_scope": "employee"}, {"results": []}])
+        out = json.loads(await handle_search(client, {"q": "missing"}))
+        assert out == {
+            "query": "missing",
+            "domain": None,
+            "count": 0,
+            "results": [],
+            "message": (
+                f"{UNTRUSTED_CONTENT_PREAMBLE}\n<untrusted_content>\n"
+                "No matching nodes found.\n</untrusted_content>"
+            ),
+        }
 
     @pytest.mark.asyncio
     async def test_raises_on_empty_query(self) -> None:

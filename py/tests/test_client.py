@@ -82,6 +82,22 @@ class TestErrorResponses:
 
 
 class TestTimeoutAndRetry:
+    async def test_url_encodes_full_text_search_queries_safely(self) -> None:
+        query = 'roadmap "café"'
+        with respx.mock(assert_all_called=False) as mock:
+            route = mock.get("https://api.example.test/vault/search").mock(
+                return_value=httpx.Response(200, json={"results": []})
+            )
+
+            client = HebbianClient("https://api.example.test", "test-token")
+            assert await client.get("/vault/search", {"q": query, "limit": 7}) == {"results": []}
+
+        assert route.called
+        request = route.calls.last.request
+        assert request.url.path == "/vault/search"
+        assert request.url.params["q"] == query
+        assert request.url.params["limit"] == "7"
+
     async def test_hanging_capture_call_uses_configured_timeout_tool_error(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
