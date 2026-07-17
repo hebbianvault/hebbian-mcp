@@ -138,7 +138,7 @@ Your token decides what the adapter can see and do — a personal-workspace toke
 | `hebbian_search` | Full-text search nodes by title, summary, and note body |
 | `hebbian_ask` | Ask a question and get an answer backed by source quotes |
 | `hebbian_context` | Describe a task and a token budget, get back a salience-ranked context pack that fits |
-| `hebbian_capture` | Write a note into your workspace |
+| `hebbian_capture` | Write one note, or batch-capture up to 25 notes, into your workspace |
 | `hebbian_traverse` | Explore nodes connected to a starting node |
 | `hebbian_provenance` | See where a node's knowledge came from |
 | `hebbian_salience` | See a node's recent activity over time |
