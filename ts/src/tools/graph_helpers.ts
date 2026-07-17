@@ -67,7 +67,9 @@ interface GraphResponse {
   [k: string]: unknown;
 }
 
-export const MAX_GRAPH_PAGES = 10_000;
+export const GRAPH_PAGE_LIMIT = 1_000;
+export const MAX_GRAPH_PAGES = 10;
+export const GRAPH_CACHE_TTL_MS = 60_000;
 
 const EMPLOYEE_GRAPH_PATH = "/vault/graph";
 const COMPANY_GRAPH_PATH = "/vault/company-graph";
@@ -75,6 +77,20 @@ const COMPANY_GRAPH_PATH = "/vault/company-graph";
 // Scope is immutable for a client because its token is immutable. Cache the
 // promise itself so concurrent graph-tool calls share the same advisory probe.
 const graphPathByClient = new WeakMap<HebbianClient, Promise<string>>();
+
+interface CachedGraph {
+  expiresAt: number;
+  value: Promise<GraphFetchResult>;
+}
+
+export interface GraphFetchResult {
+  nodes: GraphNode[];
+  truncated: boolean;
+}
+
+// A graph is immutable enough over one MCP turn to reuse briefly. Store the
+// promise so sequential and concurrent graph-backed tools share the same fetch.
+const graphCacheByClient = new WeakMap<HebbianClient, CachedGraph>();
 
 async function graphPathFor(client: HebbianClient): Promise<string> {
   let graphPath = graphPathByClient.get(client);
@@ -111,37 +127,78 @@ export async function isCompanyScope(client: HebbianClient): Promise<boolean> {
 }
 
 /** Fetch the full scoped workspace graph for the current token. */
-export async function fetchGraph(client: HebbianClient): Promise<GraphNode[]> {
+export async function fetchGraph(client: HebbianClient): Promise<GraphFetchResult> {
+  // Pagination is an opt-in compatibility change. Keep the flag-off path
+  // byte-for-byte request-compatible with main, including no graph cache.
+  if (!client.graphPagination) return fetchGraphUncached(client);
+
+  const now = Date.now();
+  const cached = graphCacheByClient.get(client);
+  if (cached && cached.expiresAt > now) return cached.value;
+
+  const value = fetchGraphUncached(client);
+  const entry = { expiresAt: now + GRAPH_CACHE_TTL_MS, value };
+  graphCacheByClient.set(client, entry);
+  try {
+    return await value;
+  } catch (error) {
+    // A failed graph request must not turn into a one-minute cached failure.
+    if (graphCacheByClient.get(client) === entry) graphCacheByClient.delete(client);
+    throw error;
+  }
+}
+
+/** Clear the short-lived graph cache after a successful graph mutation. */
+export function invalidateGraphCache(client: HebbianClient): void {
+  graphCacheByClient.delete(client);
+}
+
+async function fetchGraphUncached(client: HebbianClient): Promise<GraphFetchResult> {
   const graphPath = await graphPathFor(client);
 
   // Preserve the legacy request exactly unless pagination is explicitly enabled.
   if (!client.graphPagination) {
     const resp = (await client.get(graphPath)) as GraphResponse;
-    return Array.isArray(resp.nodes) ? resp.nodes : [];
+    return { nodes: Array.isArray(resp.nodes) ? resp.nodes : [], truncated: false };
+  }
+
+  // The company graph predates the cursor contract. Do not send pagination
+  // parameters to that endpoint, and treat its single response as complete.
+  if (graphPath === COMPANY_GRAPH_PATH) {
+    const resp = (await client.get(graphPath)) as GraphResponse;
+    return { nodes: Array.isArray(resp.nodes) ? resp.nodes : [], truncated: false };
   }
 
   const nodes: GraphNode[] = [];
   let cursor: string | undefined;
 
   for (let page = 0; page < MAX_GRAPH_PAGES; page++) {
-    const query = cursor === undefined ? { limit: 1000 } : { limit: 1000, cursor };
+    const query = cursor === undefined
+      ? { limit: GRAPH_PAGE_LIMIT }
+      : { limit: GRAPH_PAGE_LIMIT, cursor };
     const resp = (await client.get(graphPath, query)) as GraphResponse;
 
     if (Array.isArray(resp.nodes)) nodes.push(...resp.nodes);
-    if (resp.next_cursor === null) return nodes;
-    if (typeof resp.next_cursor !== "string") {
-      if (page === 0 && resp.next_cursor === undefined) return nodes;
-      throw new Error("Hebbian MCP: Paginated graph response is missing next_cursor");
-    }
+    // A legacy endpoint may omit next_cursor on its first response. Once it
+    // has returned a later page, though, an omitted cursor leaves the graph
+    // incomplete and must be surfaced to callers.
+    if (resp.next_cursor === undefined) return { nodes, truncated: page > 0 };
+    if (resp.next_cursor === null) return { nodes, truncated: false };
+    if (typeof resp.next_cursor !== "string") return { nodes, truncated: false };
     if (resp.next_cursor === cursor) {
       throw new Error("Hebbian MCP: Graph pagination received a duplicate cursor");
+    }
+    if (page + 1 === MAX_GRAPH_PAGES) {
+      process.stderr.write(
+        `[hebbian-mcp] Warning: Graph fetch truncated after ${MAX_GRAPH_PAGES} pages ` +
+          `(${MAX_GRAPH_PAGES * GRAPH_PAGE_LIMIT} nodes maximum).\n`,
+      );
+      return { nodes, truncated: true };
     }
     cursor = resp.next_cursor;
   }
 
-  throw new Error(
-    `Hebbian MCP: Graph pagination exceeded ${MAX_GRAPH_PAGES} pages; refusing to loop forever`,
-  );
+  return { nodes, truncated: false };
 }
 
 /** Lower-cased haystack of a node's searchable text fields. */

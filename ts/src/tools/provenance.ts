@@ -56,7 +56,8 @@ export async function handleProvenance(
   const target = uuid.trim();
 
   try {
-    const nodes = await fetchGraph(client);
+    const graph = await fetchGraph(client);
+    const { nodes } = graph;
     const node = nodes.find((n) => n.uuid === target);
 
     if (!node) {
@@ -67,6 +68,7 @@ export async function handleProvenance(
             "Node not found in the visible workspace graph. It may not exist or " +
             "may be outside your token's scope.",
           provenance: null,
+          ...(graph.truncated ? { truncated: true } : {}),
         },
         null,
         2,
@@ -79,6 +81,7 @@ export async function handleProvenance(
         title: node.title ?? null,
         domain: node.domain ?? null,
         provenance: node.provenance ?? null,
+        ...(graph.truncated ? { truncated: true } : {}),
       },
     );
   } catch (err) {

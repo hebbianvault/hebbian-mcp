@@ -185,12 +185,12 @@ describe("hebbian_audit_log", () => {
 describe("fetchGraph", () => {
   test("uses one legacy request with no query params when pagination is off", async () => {
     const get = jest.fn().mockResolvedValue(graph());
-    const nodes = await fetchGraph(mockClient({ get }));
+    const graphResult = await fetchGraph(mockClient({ get }));
 
     expect(get).toHaveBeenCalledTimes(2);
     expect(get).toHaveBeenNthCalledWith(1, "/tenant/whoami");
     expect(get).toHaveBeenNthCalledWith(2, "/vault/graph");
-    expect(nodes).toEqual(graph().nodes);
+    expect(graphResult).toEqual({ nodes: graph().nodes, truncated: false });
   });
 
   test("routes company tokens to the company graph", async () => {
@@ -256,7 +256,7 @@ describe("fetchGraph", () => {
     expect(get).not.toHaveBeenCalledWith("/vault/graph");
   });
 
-  test("resolves whoami once across consecutive graph tool calls", async () => {
+  test("resolves whoami once while flag-off graph tool calls remain uncached", async () => {
     const get = jest.fn((path: string) => {
       if (path === "/tenant/whoami") return Promise.resolve({ token_scope: "company" });
       return Promise.resolve(graph());
@@ -278,9 +278,12 @@ describe("fetchGraph", () => {
       .mockResolvedValueOnce({ nodes: [{ uuid: "n1" }], next_cursor: firstCursor })
       .mockResolvedValueOnce({ nodes: [{ uuid: "n2" }], next_cursor: null });
 
-    const nodes = await fetchGraph(mockClient({ get, graphPagination: true }));
+    const graphResult = await fetchGraph(mockClient({ get, graphPagination: true }));
 
-    expect(nodes).toEqual([{ uuid: "n1" }, { uuid: "n2" }]);
+    expect(graphResult).toEqual({
+      nodes: [{ uuid: "n1" }, { uuid: "n2" }],
+      truncated: false,
+    });
     expect(get).toHaveBeenNthCalledWith(2, "/vault/graph", { limit: 1000 });
     expect(get).toHaveBeenNthCalledWith(3, "/vault/graph", {
       limit: 1000,
@@ -292,23 +295,25 @@ describe("fetchGraph", () => {
   test("returns the first-page nodes from a server without pagination support", async () => {
     const get = jest.fn().mockResolvedValue({ nodes: [{ uuid: "n1" }] });
 
-    await expect(fetchGraph(mockClient({ get, graphPagination: true }))).resolves.toEqual([
-      { uuid: "n1" },
-    ]);
+    await expect(fetchGraph(mockClient({ get, graphPagination: true }))).resolves.toEqual({
+      nodes: [{ uuid: "n1" }],
+      truncated: false,
+    });
     expect(get).toHaveBeenCalledTimes(2);
     expect(get).toHaveBeenNthCalledWith(2, "/vault/graph", { limit: 1000 });
   });
 
-  test("throws when a later page omits next_cursor", async () => {
+  test("marks a later missing next_cursor as truncated", async () => {
     const get = jest
       .fn()
       .mockResolvedValueOnce({ token_scope: "employee" })
       .mockResolvedValueOnce({ nodes: [{ uuid: "n1" }], next_cursor: "next-page" })
       .mockResolvedValueOnce({ nodes: [{ uuid: "n2" }] });
 
-    await expect(fetchGraph(mockClient({ get, graphPagination: true }))).rejects.toThrow(
-      "missing next_cursor",
-    );
+    await expect(fetchGraph(mockClient({ get, graphPagination: true }))).resolves.toEqual({
+      nodes: [{ uuid: "n1" }, { uuid: "n2" }],
+      truncated: true,
+    });
     expect(get).toHaveBeenCalledTimes(3);
   });
 
@@ -333,20 +338,24 @@ describe("fetchGraph", () => {
       .mockResolvedValueOnce({ nodes: [{ uuid: "n1" }], next_cursor: "" })
       .mockResolvedValueOnce({ nodes: [{ uuid: "n2" }], next_cursor: null });
 
-    await expect(fetchGraph(mockClient({ get, graphPagination: true }))).resolves.toEqual([
-      { uuid: "n1" },
-      { uuid: "n2" },
-    ]);
+    await expect(fetchGraph(mockClient({ get, graphPagination: true }))).resolves.toEqual({
+      nodes: [{ uuid: "n1" }, { uuid: "n2" }],
+      truncated: false,
+    });
     expect(get).toHaveBeenNthCalledWith(3, "/vault/graph", { limit: 1000, cursor: "" });
   });
 
-  test("throws after the page safety cap", async () => {
+  test("returns the capped graph and warns when another page remains", async () => {
     const get = jest.fn(() => ({ nodes: [], next_cursor: `cursor-${get.mock.calls.length}` }));
+    const stderr = jest.spyOn(process.stderr, "write").mockImplementation(() => true);
 
-    await expect(fetchGraph(mockClient({ get, graphPagination: true }))).rejects.toThrow(
-      `exceeded ${MAX_GRAPH_PAGES} pages`,
-    );
+    const output = JSON.parse(await handleTraverse(mockClient({ get, graphPagination: true }), {
+      start_uuid: "n1",
+    }));
     expect(get).toHaveBeenCalledTimes(MAX_GRAPH_PAGES + 1);
+    expect(stderr).toHaveBeenCalledWith(expect.stringContaining("Graph fetch truncated after 10 pages"));
+    expect(output.truncated).toBe(true);
+    stderr.mockRestore();
   });
 
   test("propagates API errors unchanged", async () => {
@@ -354,6 +363,67 @@ describe("fetchGraph", () => {
     const get = jest.fn().mockRejectedValue(apiError);
 
     await expect(fetchGraph(mockClient({ get, graphPagination: true }))).rejects.toBe(apiError);
+  });
+
+  test("makes a page-two node reachable to traverse", async () => {
+    const get = jest
+      .fn()
+      .mockResolvedValueOnce({ token_scope: "employee" })
+      .mockResolvedValueOnce({
+        nodes: [{ uuid: "n1", edges: [{ to: "n2" }] }],
+        next_cursor: "page-2",
+      })
+      .mockResolvedValueOnce({ nodes: [{ uuid: "n2", edges: [] }], next_cursor: null });
+
+    const output = JSON.parse(await handleTraverse(mockClient({ get, graphPagination: true }), {
+      start_uuid: "n1",
+      max_hops: 1,
+    }));
+
+    expect(output.nodes.map((node: { uuid: string }) => node.uuid)).toEqual(["n1", "n2"]);
+    expect(get).toHaveBeenNthCalledWith(3, "/vault/graph", { limit: 1000, cursor: "page-2" });
+  });
+
+  test("shares one cached graph fetch between traverse and provenance", async () => {
+    const get = jest
+      .fn()
+      .mockResolvedValueOnce({ token_scope: "employee" })
+      .mockResolvedValueOnce({ nodes: graph().nodes, next_cursor: null });
+    const client = mockClient({ get, graphPagination: true });
+
+    await handleTraverse(client, { start_uuid: "n1" });
+    await handleProvenance(client, { uuid: "n1" });
+
+    expect(get.mock.calls.filter(([path]) => path === "/vault/graph")).toHaveLength(1);
+  });
+
+  test("invalidates the paginated graph cache after capture", async () => {
+    const get = jest
+      .fn()
+      .mockResolvedValueOnce({ token_scope: "employee" })
+      .mockResolvedValueOnce({ nodes: [{ uuid: "existing", edges: [] }], next_cursor: null })
+      .mockResolvedValueOnce({ nodes: [{ uuid: "new-node", edges: [] }], next_cursor: null });
+    const post = jest.fn().mockResolvedValue({ uuid: "new-node", created: true });
+    const client = mockClient({ get, post, graphPagination: true });
+
+    await handleTraverse(client, { start_uuid: "existing" });
+    await handleCapture(client, { title: "New node", text: "Captured now" });
+    const output = JSON.parse(await handleTraverse(client, { start_uuid: "new-node" }));
+
+    expect(output.nodes.map((node: { uuid: string }) => node.uuid)).toContain("new-node");
+    expect(get.mock.calls.filter(([path]) => path === "/vault/graph")).toHaveLength(2);
+  });
+
+  test("uses a single unpaginated company graph response when pagination is enabled", async () => {
+    const get = jest
+      .fn()
+      .mockResolvedValueOnce({ token_scope: "company" })
+      .mockResolvedValueOnce(graph());
+
+    await fetchGraph(mockClient({ get, graphPagination: true }));
+
+    expect(get).toHaveBeenNthCalledWith(2, "/vault/company-graph");
+    expect(get).not.toHaveBeenCalledWith("/vault/company-graph", expect.anything());
   });
 });
 

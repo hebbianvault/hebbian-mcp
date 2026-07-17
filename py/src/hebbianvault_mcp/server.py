@@ -56,6 +56,7 @@ def create_server(
         api_url=config.api_url,
         token=config.token,
         tenant=config.tenant,
+        graph_pagination=config.graph_pagination,
     )
 
     app = Server(SERVER_NAME, version=SERVER_VERSION)
@@ -143,7 +144,12 @@ async def start_serving_after_health_check(
 def main() -> None:
     """Entry point for `hebbian-mcp` CLI command."""
     config = load_config()
-    client = HebbianClient(api_url=config.api_url, token=config.token, tenant=config.tenant)
+    client = HebbianClient(
+        api_url=config.api_url,
+        token=config.token,
+        tenant=config.tenant,
+        graph_pagination=config.graph_pagination,
+    )
     server = create_server(config=config, client=client)
 
     async def _serve() -> None:
