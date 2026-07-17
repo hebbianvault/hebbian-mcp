@@ -14,6 +14,22 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  docs:
+    name: Documentation
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check live host README sections
+        run: |
+          while IFS= read -r host; do
+            grep -Fqx "### ${host}" README.md || {
+              echo "README.md is missing the ${host} host section"
+              exit 1
+            }
+          done < docs/live-hosts.txt
+
   contract-drift:
     name: Contract drift
     runs-on: blacksmith-4vcpu-ubuntu-2404
