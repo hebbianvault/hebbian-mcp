@@ -16,6 +16,7 @@ const UNTRUSTED_TEXT_FIELDS = new Set([
   "detail",
   "description",
   "details",
+  "error",
   "excerpt",
   "html",
   "markdown",
