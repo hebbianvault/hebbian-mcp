@@ -223,8 +223,22 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "title": {"type": "string", "description": "Short title for the note."},
-                "text": {"type": "string", "description": "Body of the note (Markdown)."},
+                "title": {
+                    "type": "string",
+                    "description": (
+                        "Short title for a single note. Provide title and text together for a "
+                        "single capture, or use items for a batch of up to 25 notes. Never "
+                        "combine them."
+                    ),
+                },
+                "text": {
+                    "type": "string",
+                    "description": (
+                        "Body of a single note (Markdown). Provide title and text together for "
+                        "a single capture, or use items for a batch of up to 25 notes. Never "
+                        "combine them."
+                    ),
+                },
                 "domain": {
                     "type": "string",
                     "description": "Optional knowledge-domain hint (e.g. 'Company', 'Compass').",
@@ -245,8 +259,8 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                 "items": {
                     "type": "array",
                     "description": (
-                        "Capture up to 25 notes in one request. Cannot be combined with "
-                        "title, text, domain, tags, or scope."
+                        "Batch of up to 25 notes. Use either title and text for a single "
+                        "capture or items for a batch, never both."
                     ),
                     "minItems": 1,
                     "maxItems": BATCH_CAPTURE_MAX_ITEMS,
@@ -280,24 +294,6 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                     },
                 },
             },
-            "oneOf": [
-                {
-                    "required": ["title", "text"],
-                    "not": {"required": ["items"]},
-                },
-                {
-                    "required": ["items"],
-                    "not": {
-                        "anyOf": [
-                            {"required": ["title"]},
-                            {"required": ["text"]},
-                            {"required": ["domain"]},
-                            {"required": ["tags"]},
-                            {"required": ["scope"]},
-                        ]
-                    },
-                },
-            ],
             "additionalProperties": False,
         },
     },
@@ -751,7 +747,13 @@ async def handle_capture(client: HebbianClient, args: dict[str, Any]) -> str:
                 "batch_too_large: items may contain at most "
                 f"{BATCH_CAPTURE_MAX_ITEMS} capture items"
             )
-        body: dict[str, Any] = {"items": [_capture_body(item) for item in items]}
+        batch_items: list[dict[str, Any]] = []
+        for index, item in enumerate(items):
+            try:
+                batch_items.append(_capture_body(item))
+            except ValueError as exc:
+                raise ValueError(f"items[{index}]: {exc}") from exc
+        body: dict[str, Any] = {"items": batch_items}
     else:
         body = _capture_body(args)
     try:

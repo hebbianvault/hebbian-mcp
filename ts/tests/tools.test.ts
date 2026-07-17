@@ -672,22 +672,28 @@ describe("hebbian_context", () => {
 // ── hebbian_capture ───────────────────────────────────────────────────────────
 
 describe("hebbian_capture", () => {
-  test("schema rejects batch inputs mixed with any top-level single-item field", () => {
+  test("schema is flat and describes the single-or-batch capture contract", () => {
     const validate = new Ajv().compile(HEBBIAN_CAPTURE.inputSchema);
     const items = [{ title: "Batch", text: "Body" }];
 
-    for (const [field, value] of Object.entries({
-      title: "Single title",
-      text: "Single text",
-      domain: "Company",
-      tags: ["tag"],
-      scope: "company",
-    })) {
-      expect(validate({ items, [field]: value })).toBe(false);
-    }
-
     expect(validate({ items })).toBe(true);
     expect(validate({ title: "Single", text: "Body" })).toBe(true);
+    expect(validate({ items, title: "Single" })).toBe(true);
+    expect(validate({})).toBe(true);
+    expect(HEBBIAN_CAPTURE.inputSchema.properties?.items.description).toMatch(/never both/i);
+  });
+
+  test("schema contains no unsupported composition keywords", () => {
+    const forbidden = new Set(["oneOf", "not", "anyOf", "allOf"]);
+    const walk = (value: unknown): boolean => {
+      if (Array.isArray(value)) return value.some(walk);
+      if (value && typeof value === "object") {
+        return Object.entries(value).some(([key, child]) => forbidden.has(key) || walk(child));
+      }
+      return false;
+    };
+
+    expect(walk(HEBBIAN_CAPTURE.inputSchema)).toBe(false);
   });
 
   test("calls POST /capture with { title, body } and frames single-item output", async () => {
@@ -799,6 +805,28 @@ describe("hebbian_capture", () => {
     const items = Array.from({ length: 26 }, (_, index) => ({ title: `Title ${index}`, text: "Body" }));
 
     await expect(handleCapture(client, { items })).rejects.toThrow("batch_too_large");
+    expect(post).not.toHaveBeenCalled();
+  });
+
+  test("accepts a batch of exactly 25 items and POSTs it", async () => {
+    const post = jest.fn().mockResolvedValue({ created: 25 });
+    const client = mockClient({ post });
+    const items = Array.from({ length: 25 }, (_, index) => ({ title: `Title ${index}`, text: "Body" }));
+
+    await handleCapture(client, { items });
+
+    expect(post).toHaveBeenCalledWith("/capture", {
+      items: items.map(({ title, text }) => ({ title, body: text })),
+    });
+  });
+
+  test("identifies the index of an invalid batch item", async () => {
+    const post = jest.fn();
+    const client = mockClient({ post });
+    const items = Array.from({ length: 8 }, (_, index) => ({ title: `Title ${index}`, text: "Body" }));
+    delete (items[7] as Partial<(typeof items)[number]>).text;
+
+    await expect(handleCapture(client, { items })).rejects.toThrow("items[7]: text is required");
     expect(post).not.toHaveBeenCalled();
   });
 

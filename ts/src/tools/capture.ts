@@ -32,13 +32,15 @@ export const HEBBIAN_CAPTURE: Tool = {
     properties: {
       title: {
         type: "string",
-        description: "Short title for the note. Required.",
+        description:
+          "Short title for a single note. Provide title and text together for a " +
+          "single capture, or use items for a batch of up to 25 notes. Never combine them.",
       },
       text: {
         type: "string",
         description:
-          "Body of the note (Markdown). A raw thought, meeting note, decision, " +
-          "code snippet with context, or any knowledge worth preserving.",
+          "Body of a single note (Markdown). Provide title and text together for a " +
+          "single capture, or use items for a batch of up to 25 notes. Never combine them.",
       },
       domain: {
         type: "string",
@@ -62,8 +64,8 @@ export const HEBBIAN_CAPTURE: Tool = {
       items: {
         type: "array",
         description:
-          "Capture multiple notes in one request (up to 25). Mutually exclusive " +
-          "with title, text, domain, tags, and scope.",
+          "Batch of up to 25 notes. Use either title and text for a single capture " +
+          "or items for a batch, never both.",
         minItems: 1,
         maxItems: BATCH_CAPTURE_MAX_ITEMS,
         items: {
@@ -97,24 +99,6 @@ export const HEBBIAN_CAPTURE: Tool = {
         },
       },
     },
-    oneOf: [
-      {
-        required: ["title", "text"],
-        not: { required: ["items"] },
-      },
-      {
-        required: ["items"],
-        not: {
-          anyOf: [
-            { required: ["title"] },
-            { required: ["text"] },
-            { required: ["domain"] },
-            { required: ["tags"] },
-            { required: ["scope"] },
-          ],
-        },
-      },
-    ],
     additionalProperties: false,
   },
 };
@@ -180,7 +164,16 @@ export async function handleCapture(
     if (items.length > BATCH_CAPTURE_MAX_ITEMS) {
       throw new Error(`batch_too_large: items may contain at most ${BATCH_CAPTURE_MAX_ITEMS} capture items`);
     }
-    requestBody = { items: items.map(captureRequestBody) };
+    requestBody = {
+      items: items.map((item, index) => {
+        try {
+          return captureRequestBody(item);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          throw new Error(`items[${index}]: ${message}`);
+        }
+      }),
+    };
   } else {
     requestBody = captureRequestBody({ title: title as string, text: text as string, domain, tags, scope });
   }
