@@ -67,11 +67,49 @@ interface GraphResponse {
 
 export const MAX_GRAPH_PAGES = 10_000;
 
+const EMPLOYEE_GRAPH_PATH = "/vault/graph";
+const COMPANY_GRAPH_PATH = "/vault/company-graph";
+
+// Scope is immutable for a client because its token is immutable. Cache the
+// promise itself so concurrent graph-tool calls share the same advisory probe.
+const graphPathByClient = new WeakMap<HebbianClient, Promise<string>>();
+
+async function graphPathFor(client: HebbianClient): Promise<string> {
+  let graphPath = graphPathByClient.get(client);
+  if (!graphPath) {
+    graphPath = Promise.resolve()
+      .then(() => client.get("/tenant/whoami"))
+      .then((identity) => {
+        if (
+          identity &&
+          typeof identity === "object" &&
+          (identity as Record<string, unknown>).token_scope === "company"
+        ) {
+          return COMPANY_GRAPH_PATH;
+        }
+        return EMPLOYEE_GRAPH_PATH;
+      })
+      // Whoami is advisory. A failed probe must never prevent graph tools from
+      // using the existing employee-scoped endpoint.
+      .catch(() => {
+        process.stderr.write(
+          "[hebbian-mcp] Token scope probe failed; caching the employee graph fallback. " +
+            "Restarting the MCP process clears it.\n",
+        );
+        return EMPLOYEE_GRAPH_PATH;
+      });
+    graphPathByClient.set(client, graphPath);
+  }
+  return graphPath;
+}
+
 /** Fetch the full scoped workspace graph for the current token. */
 export async function fetchGraph(client: HebbianClient): Promise<GraphNode[]> {
+  const graphPath = await graphPathFor(client);
+
   // Preserve the legacy request exactly unless pagination is explicitly enabled.
   if (!client.graphPagination) {
-    const resp = (await client.get("/vault/graph")) as GraphResponse;
+    const resp = (await client.get(graphPath)) as GraphResponse;
     return Array.isArray(resp.nodes) ? resp.nodes : [];
   }
 
@@ -80,7 +118,7 @@ export async function fetchGraph(client: HebbianClient): Promise<GraphNode[]> {
 
   for (let page = 0; page < MAX_GRAPH_PAGES; page++) {
     const query = cursor === undefined ? { limit: 1000 } : { limit: 1000, cursor };
-    const resp = (await client.get("/vault/graph", query)) as GraphResponse;
+    const resp = (await client.get(graphPath, query)) as GraphResponse;
 
     if (Array.isArray(resp.nodes)) nodes.push(...resp.nodes);
     if (resp.next_cursor === null) return nodes;

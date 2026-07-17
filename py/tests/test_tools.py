@@ -10,9 +10,10 @@ Coverage: endpoint/contract shaping, input validation, error handling.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, call
 
 import pytest
 
@@ -79,6 +80,9 @@ def mock_client(
     client = MagicMock(spec=HebbianClient)
     client.get = AsyncMock(return_value=get_return, side_effect=get_side_effect)
     client.post = AsyncMock(return_value=post_return, side_effect=post_side_effect)
+    client._graph_token_scope = None
+    client._graph_token_scope_resolved = False
+    client._graph_token_scope_resolution_task = None
     return client  # type: ignore[return-value]
 
 
@@ -107,6 +111,118 @@ def _graph() -> dict[str, Any]:
             },
         ]
     }
+
+
+class TestGraphScopeRouting:
+    @pytest.mark.asyncio
+    async def test_company_token_routes_search_to_company_graph(self) -> None:
+        client = mock_client(
+            get_side_effect=[{"token_scope": "company"}, _graph()],
+        )
+
+        await handle_search(client, {"q": "strategy"})
+
+        assert client.get.await_args_list == [
+            call("/tenant/whoami"),
+            call("/vault/company-graph"),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_employee_token_routes_traverse_to_employee_graph(self) -> None:
+        client = mock_client(
+            get_side_effect=[{"token_scope": "employee"}, _graph()],
+        )
+
+        await handle_traverse(client, {"start_uuid": "n1"})
+
+        assert client.get.await_args_list == [
+            call("/tenant/whoami"),
+            call("/vault/graph"),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_whoami_without_token_scope_routes_search_to_employee_graph(self) -> None:
+        client = mock_client(
+            get_side_effect=[{"tenant_slug": "acme"}, _graph()],
+        )
+
+        await handle_search(client, {"q": "strategy"})
+
+        assert client.get.await_args_list == [
+            call("/tenant/whoami"),
+            call("/vault/graph"),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_whoami_error_routes_provenance_to_employee_graph(self) -> None:
+        client = mock_client(
+            get_side_effect=[HebbianApiError(503, "unavailable", "try later"), _graph()],
+        )
+
+        await handle_provenance(client, {"uuid": "n1"})
+
+        assert client.get.await_args_list == [
+            call("/tenant/whoami"),
+            call("/vault/graph"),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_company_graph_errors_surface_without_employee_graph_retry(self) -> None:
+        forbidden = HebbianApiError(403, "forbidden", "company scope required")
+        client = mock_client(
+            get_side_effect=[{"token_scope": "company"}, forbidden],
+        )
+
+        with pytest.raises(RuntimeError, match="company scope required"):
+            await handle_search(client, {"q": "strategy"})
+
+        assert client.get.await_args_list == [
+            call("/tenant/whoami"),
+            call("/vault/company-graph"),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_scope_probe_is_cached_across_graph_tool_calls(self) -> None:
+        client = mock_client(
+            get_side_effect=[{"token_scope": "company"}, _graph(), _graph()],
+        )
+
+        await handle_search(client, {"q": "strategy"})
+        await handle_traverse(client, {"start_uuid": "n1"})
+
+        assert client.get.await_args_list == [
+            call("/tenant/whoami"),
+            call("/vault/company-graph"),
+            call("/vault/company-graph"),
+        ]
+
+    @pytest.mark.asyncio
+    async def test_concurrent_graph_tools_share_one_in_flight_scope_probe(self) -> None:
+        whoami_started = asyncio.Event()
+        release_whoami = asyncio.Event()
+
+        async def get(path: str) -> dict[str, Any]:
+            if path == "/tenant/whoami":
+                whoami_started.set()
+                await release_whoami.wait()
+                return {"token_scope": "company"}
+            assert path == "/vault/company-graph"
+            return _graph()
+
+        client = mock_client()
+        client.get = AsyncMock(side_effect=get)
+        search = asyncio.create_task(handle_search(client, {"q": "strategy"}))
+        await whoami_started.wait()
+        traverse = asyncio.create_task(handle_traverse(client, {"start_uuid": "n1"}))
+        await asyncio.sleep(0)
+
+        assert client.get.await_args_list == [call("/tenant/whoami")]
+
+        release_whoami.set()
+        await asyncio.gather(search, traverse)
+
+        assert client.get.await_args_list.count(call("/tenant/whoami")) == 1
+        assert client.get.await_args_list.count(call("/vault/company-graph")) == 2
 
 
 # ── hebbian_read_node ─────────────────────────────────────────────────────────
@@ -148,7 +264,7 @@ class TestSearch:
     async def test_fetches_graph_and_ranks(self) -> None:
         client = mock_client(get_return=_graph())
         out = json.loads(await handle_search(client, {"q": "strategy roadmap", "limit": 5}))
-        client.get.assert_called_once_with("/vault/graph")
+        assert client.get.await_args_list == [call("/tenant/whoami"), call("/vault/graph")]
         assert out["count"] > 0
         assert out["results"][0]["uuid"] == "n1"
         expect_framed(out["results"][0]["title"], "2026 Company Strategy")
@@ -291,7 +407,7 @@ class TestTraverse:
     async def test_walks_to_edge_shape(self) -> None:
         client = mock_client(get_return=_graph())
         out = json.loads(await handle_traverse(client, {"start_uuid": "n1", "max_hops": 2}))
-        client.get.assert_called_once_with("/vault/graph")
+        assert client.get.await_args_list == [call("/tenant/whoami"), call("/vault/graph")]
         assert out["node_count"] == 2
         assert out["edge_count"] == 1
         assert out["edges"][0]["source_uuid"] == "n1"
@@ -319,7 +435,7 @@ class TestProvenance:
     async def test_returns_provenance(self) -> None:
         client = mock_client(get_return=_graph())
         out = json.loads(await handle_provenance(client, {"uuid": "n1"}))
-        client.get.assert_called_once_with("/vault/graph")
+        assert client.get.await_args_list == [call("/tenant/whoami"), call("/vault/graph")]
         assert out["uuid"] == "n1"
         assert out["provenance"]["path"] == "B"
 
