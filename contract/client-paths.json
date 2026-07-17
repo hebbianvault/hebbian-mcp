@@ -10,5 +10,6 @@
   {"method": "POST", "path": "/v1/agents/{agent_id}/absorb"},
   {"method": "POST", "path": "/v1/context"},
   {"method": "GET", "path": "/vault/activity"},
+  {"method": "GET", "path": "/vault/company-graph"},
   {"method": "GET", "path": "/vault/graph"}
 ]

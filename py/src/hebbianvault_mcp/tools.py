@@ -12,6 +12,7 @@ ever contains what the caller's token is allowed to see.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import re
@@ -362,9 +363,43 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
 
 async def _fetch_graph(client: HebbianClient) -> list[dict[str, Any]]:
     """Fetch the full scoped workspace graph for the current token."""
-    resp = await client.get("/vault/graph")
+    # whoami is advisory. Resolve it only once per client/token and default to
+    # the employee graph if the endpoint is unavailable or its payload changes.
+    # A shared task prevents concurrent tool calls from sending duplicate probes.
+    if not client._graph_token_scope_resolved:
+        task = client._graph_token_scope_resolution_task
+        if task is None:
+            task = asyncio.create_task(_resolve_graph_token_scope(client))
+            client._graph_token_scope_resolution_task = task
+        await asyncio.shield(task)
+
+    path = (
+        "/vault/company-graph"
+        if client._graph_token_scope == "company"  # noqa: S105 - service-defined scope label
+        else "/vault/graph"
+    )
+    resp = await client.get(path)
     nodes = resp.get("nodes") if isinstance(resp, dict) else None
     return nodes if isinstance(nodes, list) else []
+
+
+async def _resolve_graph_token_scope(client: HebbianClient) -> None:
+    """Resolve token scope once; whoami failures are advisory."""
+    scope: str | None = None
+    try:
+        whoami = await client.get("/tenant/whoami")
+        if isinstance(whoami, dict):
+            token_scope = whoami.get("token_scope")
+            if isinstance(token_scope, str):
+                scope = token_scope
+    except Exception:  # noqa: BLE001 - advisory lookup must not break graph tools
+        logger.warning(
+            "Token scope probe failed; caching the employee graph fallback. "
+            "Restarting the MCP process clears it."
+        )
+        scope = None
+    client._graph_token_scope = scope
+    client._graph_token_scope_resolved = True
 
 
 def _node_haystack(node: dict[str, Any]) -> str:

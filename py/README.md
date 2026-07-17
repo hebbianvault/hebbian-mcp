@@ -138,7 +138,7 @@ server = create_server()
 
 ## Token scope
 
-Your token decides what the adapter can see and do — a personal-workspace token gives access to your own knowledge; a company-workspace token gives access to the shared company workspace (where your role allows). Scope is decided by the Hebbian service.
+Your token decides what the adapter can see and do — a personal-workspace token gives access to your own knowledge; a company-workspace token gives access to the shared company workspace (where your role allows). Scope is decided by the Hebbian service. Graph-backed search, traverse, and provenance tools route company-scoped tokens to the company graph and other tokens to the workspace graph. If the advisory scope probe fails, the adapter caches the employee-graph fallback for its process lifetime; restarting the MCP process clears that cached fallback.
 
 ## Tools
 

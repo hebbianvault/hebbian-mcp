@@ -109,6 +109,11 @@ class HebbianClient:
         # resolves the single-membership case from the token alone.
         if tenant and tenant.strip():
             self._headers["X-Hebbian-Tenant"] = tenant.strip()
+        # Set lazily by graph-backed MCP tools after their advisory whoami probe.
+        # Keeping this on the client scopes the result to the configured token.
+        self._graph_token_scope: str | None = None
+        self._graph_token_scope_resolved = False
+        self._graph_token_scope_resolution_task: asyncio.Task[None] | None = None
 
     async def get(
         self,
