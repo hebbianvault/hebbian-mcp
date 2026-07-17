@@ -171,7 +171,7 @@ async function main(): Promise<void> {
           result = await handleGdprExport(client);
           break;
         case "hebbian_audit_log":
-          result = await handleAuditLog(client, args as { since?: string; limit?: number });
+          result = await handleAuditLog(client, args as { offset?: number; limit?: number });
           break;
         default:
           return {
