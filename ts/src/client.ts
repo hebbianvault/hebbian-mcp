@@ -11,15 +11,18 @@
 
 import { PACKAGE_VERSION } from "./package_info.js";
 
+export const DEFAULT_TIMEOUT_MS = 30_000;
+
 /** Structured API error returned by the Hebbian API (RFC 7807 variant). */
 export class HebbianApiError extends Error {
   constructor(
-    public readonly statusCode: number,
+    public readonly statusCode: number | null,
     public readonly errorCode: string,
     message: string,
     public readonly detail?: unknown,
+    options?: ErrorOptions,
   ) {
-    super(message);
+    super(message, options);
     this.name = "HebbianApiError";
   }
 
@@ -45,6 +48,19 @@ export class HebbianApiError extends Error {
       return `Rate limit exceeded (${this.errorCode}): ${this.message}. Slow down and retry.`;
     }
     return `API error ${this.statusCode} (${this.errorCode}): ${this.message}`;
+  }
+}
+
+/** Raised when an API request exceeds the configured client-side deadline. */
+export class HebbianTimeoutError extends HebbianApiError {
+  constructor(public readonly timeoutMs: number, cause?: unknown) {
+    super(null, "request_timeout", `Request timed out after ${timeoutMs}ms.`, undefined, { cause });
+    this.name = "HebbianTimeoutError";
+  }
+
+  override toToolError(): string {
+    return `Request timed out after ${this.timeoutMs}ms. ` +
+      "Set HEBBIAN_TIMEOUT_MS to a larger value if needed.";
   }
 }
 
@@ -79,6 +95,7 @@ export class HebbianClient {
   private readonly apiUrl: string;
   private readonly token: string;
   private readonly tenant?: string;
+  private readonly timeoutMs: number;
   /** Whether graph-derived tools should request UUID-keyset paginated graphs. */
   public readonly graphPagination: boolean;
 
@@ -87,6 +104,7 @@ export class HebbianClient {
     this.apiUrl = apiUrl.replace(/\/+$/, "");
     this.token = token;
     this.tenant = tenant && tenant.trim().length > 0 ? tenant.trim() : undefined;
+    this.timeoutMs = timeoutMsFromEnv();
     this.graphPagination = graphPagination;
   }
 
@@ -100,11 +118,10 @@ export class HebbianClient {
     query?: Record<string, string | number | boolean | undefined>,
   ): Promise<unknown> {
     const url = this.buildUrl(path, query);
-    const response = await fetch(url.toString(), {
+    return this.request("GET", url.toString(), {
       method: "GET",
       headers: this.headers(),
     });
-    return this.handleResponse(response);
   }
 
   /**
@@ -117,7 +134,7 @@ export class HebbianClient {
     body: Record<string, unknown>,
   ): Promise<unknown> {
     const url = this.buildUrl(path);
-    const response = await fetch(url.toString(), {
+    return this.request("POST", url.toString(), {
       method: "POST",
       headers: {
         ...this.headers(),
@@ -125,7 +142,48 @@ export class HebbianClient {
       },
       body: JSON.stringify(body),
     });
-    return this.handleResponse(response);
+  }
+
+  /**
+   * Make a timed API request. Only GETs may retry: once after a network error
+   * with no response, or once after a 5xx response.
+   */
+  private async request(method: "GET" | "POST", url: string, init: RequestInit): Promise<unknown> {
+    const maxAttempts = method === "GET" ? 2 : 1;
+
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      let response: Response;
+      try {
+        response = await this.fetchWithTimeout(url, init);
+      } catch (error) {
+        if (attempt + 1 < maxAttempts) continue;
+        throw error;
+      }
+
+      if (response.status >= 500 && response.status <= 599 && attempt + 1 < maxAttempts) {
+        continue;
+      }
+      return this.handleResponse(response);
+    }
+
+    // The loop always returns or throws. This keeps TypeScript's control-flow
+    // analysis satisfied should the retry policy change in the future.
+    throw new Error("Request retry loop exited unexpectedly");
+  }
+
+  private async fetchWithTimeout(url: string, init: RequestInit): Promise<Response> {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), this.timeoutMs);
+    try {
+      return await fetch(url, { ...init, signal: controller.signal });
+    } catch (error) {
+      if (controller.signal.aborted) {
+        throw new HebbianTimeoutError(this.timeoutMs, error);
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
   /** Build an absolute URL from path + optional query params. */
@@ -190,4 +248,11 @@ export class HebbianClient {
       errBody.detail,
     );
   }
+}
+
+function timeoutMsFromEnv(): number {
+  const value = process.env.HEBBIAN_TIMEOUT_MS?.trim();
+  if (!value || !/^\d+$/.test(value)) return DEFAULT_TIMEOUT_MS;
+  const timeoutMs = Number(value);
+  return Number.isSafeInteger(timeoutMs) && timeoutMs > 0 ? timeoutMs : DEFAULT_TIMEOUT_MS;
 }

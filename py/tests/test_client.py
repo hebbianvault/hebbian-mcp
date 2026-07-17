@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import asyncio
 import tomllib
+from collections.abc import AsyncIterator
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, call
 
 import httpx
 import pytest
+import respx
 
 from hebbianvault_mcp.client import HebbianApiError, HebbianClient
 from hebbianvault_mcp.config import HebbianConfig
@@ -18,6 +21,7 @@ from hebbianvault_mcp.server import (
     run_startup_health_check,
     start_serving_after_health_check,
 )
+from hebbianvault_mcp.tools import handle_capture
 
 
 class TestErrorResponses:
@@ -75,6 +79,90 @@ class TestErrorResponses:
         tool_error = error.to_tool_error()
         assert "This token has been revoked." in tool_error
         assert "Generate a new token" not in tool_error
+
+
+class TestTimeoutAndRetry:
+    async def test_hanging_capture_call_uses_configured_timeout_tool_error(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("HEBBIAN_TIMEOUT_MS", "25")
+
+        class SlowDripBody(httpx.AsyncByteStream):
+            async def __aiter__(self) -> AsyncIterator[bytes]:
+                while True:
+                    yield b" "
+                    await asyncio.sleep(0.01)
+
+            async def aclose(self) -> None:
+                return None
+
+        async def slow_drip(
+            _transport: httpx.AsyncHTTPTransport, _request: httpx.Request
+        ) -> httpx.Response:
+            return httpx.Response(200, stream=SlowDripBody())
+
+        monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", slow_drip)
+        client = HebbianClient("https://api.example.test", "test-token")
+        started_at = asyncio.get_running_loop().time()
+        with pytest.raises(RuntimeError, match="Request timed out after 25ms"):
+            await handle_capture(client, {"title": "T", "text": "B"})
+
+        assert asyncio.get_running_loop().time() - started_at < 0.3
+
+    async def test_capture_post_is_not_retried_after_a_5xx(self) -> None:
+        with respx.mock(assert_all_called=False) as mock:
+            route = mock.post("https://api.example.test/capture")
+            route.side_effect = [
+                httpx.Response(500, json={"code": "server_error", "message": "Try later"}),
+                httpx.Response(200, json={"uuid": "would-be-duplicate"}),
+            ]
+
+            client = HebbianClient("https://api.example.test", "test-token")
+            with pytest.raises(RuntimeError, match="API error 500 \\(server_error\\): Try later"):
+                await handle_capture(client, {"title": "T", "text": "B"})
+
+        assert route.call_count == 1
+
+    async def test_get_retries_once_after_a_5xx_and_returns_second_response(self) -> None:
+        with respx.mock(assert_all_called=False) as mock:
+            route = mock.get("https://api.example.test/nodes/retried")
+            route.side_effect = [
+                httpx.Response(500, json={"message": "Try later"}),
+                httpx.Response(200, json={"uuid": "retried"}),
+            ]
+
+            client = HebbianClient("https://api.example.test", "test-token")
+            assert await client.get("/nodes/retried") == {"uuid": "retried"}
+
+        assert route.call_count == 2
+
+    async def test_get_retries_once_after_a_network_error(self) -> None:
+        with respx.mock(assert_all_called=False) as mock:
+            route = mock.get("https://api.example.test/nodes/retried")
+            route.side_effect = [
+                httpx.ConnectError("network unavailable"),
+                httpx.Response(200, json={"uuid": "retried"}),
+            ]
+
+            client = HebbianClient("https://api.example.test", "test-token")
+            assert await client.get("/nodes/retried") == {"uuid": "retried"}
+
+        assert route.call_count == 2
+
+    async def test_get_fails_after_exactly_two_5xx_attempts(self) -> None:
+        with respx.mock(assert_all_called=False) as mock:
+            route = mock.get("https://api.example.test/nodes/retried")
+            route.side_effect = [
+                httpx.Response(500, json={"message": "first failure"}),
+                httpx.Response(500, json={"code": "server_error", "message": "second failure"}),
+            ]
+
+            client = HebbianClient("https://api.example.test", "test-token")
+            with pytest.raises(HebbianApiError, match="second failure") as exc_info:
+                await client.get("/nodes/retried")
+
+        assert exc_info.value.status_code == 500
+        assert route.call_count == 2
 
 
 def test_handshake_version_matches_package_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
