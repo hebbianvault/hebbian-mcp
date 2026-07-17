@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from typing import Any
 
 import httpx
@@ -19,6 +20,7 @@ from . import __version__
 logger = logging.getLogger(__name__)
 
 USER_AGENT = f"hebbianvault-mcp/{__version__} (Python)"
+DEFAULT_TIMEOUT_MS = 30_000
 
 
 class HebbianApiError(Exception):
@@ -62,6 +64,20 @@ class HebbianApiError(Exception):
         return f"API error {self.status_code} ({self.error_code}): {self}"
 
 
+class HebbianTimeoutError(HebbianApiError):
+    """Raised when an API request exceeds the configured client-side deadline."""
+
+    def __init__(self, timeout_ms: int) -> None:
+        super().__init__(408, "request_timeout", f"Request timed out after {timeout_ms}ms.")
+        self.timeout_ms = timeout_ms
+
+    def to_tool_error(self) -> str:
+        return (
+            f"Request timed out after {self.timeout_ms}ms. "
+            "Set HEBBIAN_TIMEOUT_MS to a larger value if needed."
+        )
+
+
 def _detail_reason(detail: Any) -> str | None:
     """Extract an actionable reason from structured API and FastAPI detail bodies."""
     if isinstance(detail, str):
@@ -82,6 +98,7 @@ class HebbianClient:
     def __init__(self, api_url: str, token: str, tenant: str | None = None) -> None:
         # Normalise: strip trailing slash
         self._api_url = api_url.rstrip("/")
+        self._timeout_ms = _timeout_ms_from_env()
         self._headers = {
             "Authorization": f"Bearer {token}",
             "Accept": "application/json",
@@ -99,20 +116,45 @@ class HebbianClient:
     ) -> Any:
         """Execute a GET request and return parsed JSON."""
         url = f"{self._api_url}{path}"
-        async with httpx.AsyncClient() as http:
-            response = await http.get(url, headers=self._headers, params=params)
-        return await self._handle_response(response)
+        return await self._request("GET", url, params=params)
 
     async def post(self, path: str, body: dict[str, Any]) -> Any:
         """Execute a POST request and return parsed JSON."""
         url = f"{self._api_url}{path}"
-        async with httpx.AsyncClient() as http:
-            response = await http.post(
-                url,
-                headers={**self._headers, "Content-Type": "application/json"},
-                content=json.dumps(body).encode(),
-            )
-        return await self._handle_response(response)
+        return await self._request(
+            "POST",
+            url,
+            content=json.dumps(body).encode(),
+            headers={**self._headers, "Content-Type": "application/json"},
+        )
+
+    async def _request(self, method: str, url: str, **kwargs: Any) -> Any:
+        """Make a timed request, retrying only GET network and 5xx failures once."""
+        max_attempts = 2 if method == "GET" else 1
+        headers = kwargs.pop("headers", self._headers)
+        for attempt in range(max_attempts):
+            try:
+                async with httpx.AsyncClient(timeout=self._timeout_ms / 1000) as http:
+                    response = await http.request(
+                        method,
+                        url,
+                        headers=headers,
+                        **kwargs,
+                    )
+            except httpx.TimeoutException as exc:
+                if attempt + 1 < max_attempts:
+                    continue
+                raise HebbianTimeoutError(self._timeout_ms) from exc
+            except httpx.RequestError:
+                if attempt + 1 < max_attempts:
+                    continue
+                raise
+
+            if response.status_code >= 500 and attempt + 1 < max_attempts:
+                continue
+            return await self._handle_response(response)
+
+        raise RuntimeError("Request retry loop exited unexpectedly")
 
     @staticmethod
     async def _handle_response(response: httpx.Response) -> Any:
@@ -138,3 +180,12 @@ class HebbianClient:
             message=message,
             detail=detail,
         )
+
+
+def _timeout_ms_from_env() -> int:
+    """Read a positive millisecond timeout, falling back to the safe default."""
+    value = os.environ.get("HEBBIAN_TIMEOUT_MS", "").strip()
+    if not value.isdigit():
+        return DEFAULT_TIMEOUT_MS
+    timeout_ms = int(value)
+    return timeout_ms if 0 < timeout_ms <= 9_007_199_254_740_991 else DEFAULT_TIMEOUT_MS
