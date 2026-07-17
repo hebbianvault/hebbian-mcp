@@ -39,6 +39,7 @@ logger = logging.getLogger("hebbianvault_mcp")
 
 SERVER_NAME = "hebbianvault-mcp"
 SERVER_VERSION = PACKAGE_VERSION
+STARTUP_HEALTH_TIMEOUT_SECONDS = 5.0
 
 
 def create_server(
@@ -119,8 +120,12 @@ async def run_startup_health_check(
 ) -> None:
     """Check API reachability and token identity without preventing MCP startup."""
     try:
-        await client.get("/healthz")
-        await client.get("/tenant/whoami")
+        await asyncio.wait_for(
+            client.get("/healthz"), timeout=STARTUP_HEALTH_TIMEOUT_SECONDS
+        )
+        await asyncio.wait_for(
+            client.get("/tenant/whoami"), timeout=STARTUP_HEALTH_TIMEOUT_SECONDS
+        )
     except Exception as exc:  # noqa: BLE001 - startup probes must never crash serving
         write_stderr(f"[hebbian-mcp] Startup health check failed: {_startup_health_hint(exc)}")
 

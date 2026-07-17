@@ -325,7 +325,7 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         "name": "hebbian_whoami",
         "description": (
             "Show the identity verified for the configured Hebbian token. Returns the "
-            "tenant slug, role, token scope, and principal type."
+            "tenant slug, role, token scope, and principal information."
         ),
         "inputSchema": {
             "type": "object",
@@ -636,7 +636,7 @@ async def handle_whoami(client: HebbianClient, args: dict[str, Any]) -> str:
     del args
     try:
         result = await client.get("/tenant/whoami")
-        return json.dumps(result, indent=2)
+        return _stringify_untrusted_result(result)
     except HebbianApiError as exc:
         raise RuntimeError(exc.to_tool_error()) from exc
 

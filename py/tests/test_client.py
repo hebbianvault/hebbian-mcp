@@ -13,6 +13,7 @@ from hebbianvault_mcp.client import HebbianApiError, HebbianClient
 from hebbianvault_mcp.config import HebbianConfig
 from hebbianvault_mcp.server import (
     SERVER_VERSION,
+    STARTUP_HEALTH_TIMEOUT_SECONDS,
     create_server,
     run_startup_health_check,
     start_serving_after_health_check,
@@ -110,6 +111,45 @@ async def test_startup_probe_reports_garbage_token_before_tool_handling(
     assert "authentication rejected (401)" in stderr
     assert "Generate a new token" in stderr
     assert "garbage token" not in stderr
+
+
+@pytest.mark.asyncio
+async def test_startup_probe_bounds_each_request_to_five_seconds(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = MagicMock(spec=HebbianClient)
+    client.get = AsyncMock(side_effect=[{"ok": True}, {"tenant_slug": "acme"}])
+    timeouts: list[float] = []
+
+    async def wait_for(awaitable: object, *, timeout: float) -> object:
+        timeouts.append(timeout)
+        return await awaitable  # type: ignore[misc]
+
+    monkeypatch.setattr("hebbianvault_mcp.server.asyncio.wait_for", wait_for)
+
+    await run_startup_health_check(client)
+
+    assert timeouts == [STARTUP_HEALTH_TIMEOUT_SECONDS, STARTUP_HEALTH_TIMEOUT_SECONDS]
+
+
+@pytest.mark.asyncio
+async def test_startup_probe_reports_access_denied(capsys: pytest.CaptureFixture[str]) -> None:
+    client = MagicMock(spec=HebbianClient)
+    client.get = AsyncMock(side_effect=HebbianApiError(403, "forbidden", "scope"))
+
+    await run_startup_health_check(client)
+
+    assert "access denied (403)" in capsys.readouterr().err
+
+
+@pytest.mark.asyncio
+async def test_startup_probe_reports_unreachable_api(capsys: pytest.CaptureFixture[str]) -> None:
+    client = MagicMock(spec=HebbianClient)
+    client.get = AsyncMock(side_effect=OSError("network unreachable"))
+
+    await run_startup_health_check(client)
+
+    assert "API unreachable or unavailable" in capsys.readouterr().err
 
 
 @pytest.mark.asyncio

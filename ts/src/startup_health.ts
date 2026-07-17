@@ -4,6 +4,26 @@ import { HebbianApiError, type HebbianClient } from "./client.js";
 
 type StderrWriter = (line: string) => void;
 
+/** A startup probe is advisory and must never delay the MCP handshake for long. */
+export const STARTUP_HEALTH_TIMEOUT_MS = 5_000;
+
+async function awaitStartupProbe<T>(request: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      request,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`startup probe timed out after ${STARTUP_HEALTH_TIMEOUT_MS}ms`)),
+          STARTUP_HEALTH_TIMEOUT_MS,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer !== undefined) clearTimeout(timer);
+  }
+}
+
 function startupHealthHint(error: unknown): string {
   if (error instanceof HebbianApiError) {
     if (error.statusCode === 401) {
@@ -26,8 +46,8 @@ export async function runStartupHealthCheck(
   writeStderr: StderrWriter = (line) => process.stderr.write(line),
 ): Promise<void> {
   try {
-    await client.get("/healthz");
-    await client.get("/tenant/whoami");
+    await awaitStartupProbe(client.get("/healthz"));
+    await awaitStartupProbe(client.get("/tenant/whoami"));
   } catch (error) {
     writeStderr(`[hebbian-mcp] Startup health check failed: ${startupHealthHint(error)}\n`);
   }
