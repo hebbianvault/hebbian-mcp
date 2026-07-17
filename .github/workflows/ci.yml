@@ -5,6 +5,8 @@ on:
     branches: [main, dev]
   pull_request:
     branches: [main, dev]
+  schedule:
+    - cron: "17 3 * * *"
 
 # Cancel superseded runs on the same ref so successive pushes don't stack.
 concurrency:
@@ -12,6 +14,23 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  contract-drift:
+    name: Contract drift
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Check OpenAPI contract
+        run: python3 scripts/check_contract_drift.py
+
+      - name: Lint client-path manifest
+        run: python3 scripts/check_contract_drift.py --lint-only
+
   ts:
     name: TypeScript — lint + typecheck + tests
     runs-on: blacksmith-4vcpu-ubuntu-2404
