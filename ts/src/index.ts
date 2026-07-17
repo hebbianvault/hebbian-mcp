@@ -9,7 +9,7 @@
  * Auth: set HEBBIAN_API_TOKEN (or HEBBIAN_TOKEN) env var, or write a config
  * file at ~/.config/hebbian/mcp-tenant.json with { "token": "hbn_..." }.
  *
- * 11 tools:
+ * 13 tools:
  *   hebbian_read_node       — fetch a node by UUID
  *   hebbian_search          — search the workspace for matching nodes
  *   hebbian_ask             — synthesis Q&A returned with source quotes
@@ -21,6 +21,8 @@
  *   hebbian_recent_activity — recent workspace activity timeline
  *   hebbian_whoami          — token identity, tenant, role, and scope
  *   hebbian_usage           — usage and spend-meter summary
+ *   hebbian_gdpr_export     — owner-authorized tenant data export
+ *   hebbian_audit_log       — tenant audit-log entries
  *
  * All access control is enforced server-side by the API. What a token can
  * read and write is determined by its scope; this package is a thin client.
@@ -51,6 +53,8 @@ import {
   HEBBIAN_RECENT_ACTIVITY, handleRecentActivity,
   HEBBIAN_WHOAMI, handleWhoami,
   HEBBIAN_USAGE, handleUsage,
+  HEBBIAN_GDPR_EXPORT, handleGdprExport,
+  HEBBIAN_AUDIT_LOG, handleAuditLog,
 } from "./tools/index.js";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -69,6 +73,8 @@ const TOOLS = [
   HEBBIAN_RECENT_ACTIVITY,
   HEBBIAN_WHOAMI,
   HEBBIAN_USAGE,
+  HEBBIAN_GDPR_EXPORT,
+  HEBBIAN_AUDIT_LOG,
 ] as const;
 
 // ── Boot ───────────────────────────────────────────────────────────────────────
@@ -160,6 +166,12 @@ async function main(): Promise<void> {
           break;
         case "hebbian_usage":
           result = await handleUsage(client, args as { company?: boolean });
+          break;
+        case "hebbian_gdpr_export":
+          result = await handleGdprExport(client);
+          break;
+        case "hebbian_audit_log":
+          result = await handleAuditLog(client, args as { since?: string; limit?: number });
           break;
         default:
           return {

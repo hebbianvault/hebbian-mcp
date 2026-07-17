@@ -5,6 +5,8 @@
   {"method": "GET", "path": "/metrics/nodes/{node_uuid}/activation-history"},
   {"method": "GET", "path": "/nodes/{node_uuid}"},
   {"method": "GET", "path": "/tenant/whoami"},
+  {"method": "GET", "path": "/tenant/export"},
+  {"method": "GET", "path": "/tenant/audit-log"},
   {"method": "GET", "path": "/usage/company"},
   {"method": "GET", "path": "/usage/me"},
   {"method": "POST", "path": "/v1/agents/{agent_id}/absorb"},
