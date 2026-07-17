@@ -16,8 +16,6 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, call
 
 import pytest
-from jsonschema import Draft202012Validator
-
 from hebbianvault_mcp.client import HebbianApiError, HebbianClient
 from hebbianvault_mcp.tools import (
     TOOL_SCHEMAS,
@@ -709,6 +707,29 @@ class TestCapture:
         client.post.assert_not_awaited()
 
     @pytest.mark.asyncio
+    async def test_accepts_a_batch_of_exactly_25_items_and_posts_it(self) -> None:
+        client = mock_client(post_return={"created": 25})
+        items = [{"title": f"Note {index}", "text": "Body"} for index in range(25)]
+
+        await handle_capture(client, {"items": items})
+
+        client.post.assert_awaited_once_with(
+            "/capture",
+            {"items": [{"title": item["title"], "body": item["text"]} for item in items]},
+        )
+
+    @pytest.mark.asyncio
+    async def test_identifies_the_index_of_an_invalid_batch_item(self) -> None:
+        client = mock_client()
+        items = [{"title": f"Note {index}", "text": "Body"} for index in range(8)]
+        del items[7]["text"]
+
+        with pytest.raises(ValueError, match=r"items\[7\]: 'text' is required"):
+            await handle_capture(client, {"items": items})
+
+        client.post.assert_not_awaited()
+
+    @pytest.mark.asyncio
     async def test_rejects_items_with_single_item_fields_without_posting(self) -> None:
         client = mock_client()
 
@@ -736,32 +757,32 @@ class TestCapture:
         with pytest.raises(RuntimeError, match=error_code):
             await handle_capture(client, {"items": [{"title": "T", "text": "B"}]})
 
-    def test_schema_exposes_mutually_exclusive_batch_items(self) -> None:
+    def test_schema_exposes_batch_limit_and_single_or_batch_description(self) -> None:
         schema = next(schema for schema in TOOL_SCHEMAS if schema["name"] == "hebbian_capture")
         items = schema["inputSchema"]["properties"]["items"]
 
         assert items["minItems"] == 1
         assert items["maxItems"] == 25
         assert items["items"]["required"] == ["title", "text"]
+        assert "never both" in items["description"].lower()
 
-    def test_schema_rejects_batch_inputs_mixed_with_single_item_fields(self) -> None:
+    def test_schema_is_flat_and_contains_no_unsupported_composition_keywords(self) -> None:
         schema = next(schema for schema in TOOL_SCHEMAS if schema["name"] == "hebbian_capture")[
             "inputSchema"
         ]
-        validator = Draft202012Validator(schema)
-        items = [{"title": "Batch", "text": "Body"}]
+        assert "required" not in schema
 
-        for field, value in {
-            "title": "Single title",
-            "text": "Single text",
-            "domain": "Company",
-            "tags": ["tag"],
-            "scope": "company",
-        }.items():
-            assert not validator.is_valid({"items": items, field: value})
+        def contains_forbidden_keyword(value: object) -> bool:
+            if isinstance(value, dict):
+                return any(
+                    key in {"oneOf", "not", "anyOf", "allOf"} or contains_forbidden_keyword(child)
+                    for key, child in value.items()
+                )
+            if isinstance(value, list):
+                return any(contains_forbidden_keyword(child) for child in value)
+            return False
 
-        assert validator.is_valid({"items": items})
-        assert validator.is_valid({"title": "Single", "text": "Body"})
+        assert not contains_forbidden_keyword(schema)
 
 
 # ── hebbian_traverse (graph-derived BFS) ───────────────────────────────────────

@@ -87,6 +87,61 @@ jobs:
           packages-dir: py/dist/
           skip-existing: true
 
+  verify-registry-parity:
+    name: Verify npm and PyPI registry parity
+    needs: [publish-npm, publish-pypi]
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+
+      - name: Confirm published versions
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+
+          npm_version=""
+          for attempt in {1..5}; do
+            if npm_version="$(npm view "@hebbianvault/mcp@${VERSION}" version 2>/dev/null)"; then
+              break
+            fi
+            if [ "$attempt" -lt 5 ]; then
+              echo "npm version lookup failed (attempt ${attempt}/5); retrying in 20 seconds" >&2
+              sleep 20
+            fi
+          done
+
+          if [ -z "$npm_version" ]; then
+            echo "Unable to look up @hebbianvault/mcp@${VERSION} on npm after 5 attempts" >&2
+            exit 1
+          fi
+          if [ "$npm_version" != "$VERSION" ]; then
+            echo "npm published version ${npm_version} does not match tag version ${VERSION}" >&2
+            exit 1
+          fi
+
+          pypi_version=""
+          for attempt in {1..5}; do
+            if pypi_version="$(curl -fsSL "https://pypi.org/pypi/hebbianvault-mcp/${VERSION}/json" | jq -er '.info.version')"; then
+              break
+            fi
+            if [ "$attempt" -lt 5 ]; then
+              echo "PyPI version lookup failed (attempt ${attempt}/5); retrying in 20 seconds" >&2
+              sleep 20
+            fi
+          done
+
+          if [ -z "$pypi_version" ]; then
+            echo "Unable to look up hebbianvault-mcp ${VERSION} on PyPI after 5 attempts" >&2
+            exit 1
+          fi
+          if [ "$pypi_version" != "$VERSION" ]; then
+            echo "PyPI published version ${pypi_version} does not match tag version ${VERSION}" >&2
+            exit 1
+          fi
+
   bump-homebrew-formula:
     needs: publish-npm
     runs-on: blacksmith-4vcpu-ubuntu-2404
