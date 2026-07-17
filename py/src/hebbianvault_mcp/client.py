@@ -8,6 +8,7 @@ hebbianvault_mcp.client — HTTPS client for the Hebbian API.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -134,14 +135,21 @@ class HebbianClient:
         headers = kwargs.pop("headers", self._headers)
         for attempt in range(max_attempts):
             try:
-                async with httpx.AsyncClient(timeout=self._timeout_ms / 1000) as http:
-                    response = await http.request(
-                        method,
-                        url,
-                        headers=headers,
-                        **kwargs,
-                    )
-            except httpx.TimeoutException as exc:
+                timeout_seconds = self._timeout_ms / 1000
+                # HTTPX applies its single-value timeout to every I/O phase. The
+                # enclosing deadline covers the whole request, including a
+                # slow-drip body, to match the TypeScript client's timeout.
+                async with asyncio.timeout(timeout_seconds):
+                    async with httpx.AsyncClient(
+                        timeout=httpx.Timeout(timeout=timeout_seconds)
+                    ) as http:
+                        response = await http.request(
+                            method,
+                            url,
+                            headers=headers,
+                            **kwargs,
+                        )
+            except (TimeoutError, httpx.TimeoutException) as exc:
                 if attempt + 1 < max_attempts:
                     continue
                 raise HebbianTimeoutError(self._timeout_ms) from exc

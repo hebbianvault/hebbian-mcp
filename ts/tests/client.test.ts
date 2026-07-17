@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, jest, test } from "@jest/globals";
 
-import { HebbianApiError, HebbianClient } from "../src/client.js";
+import { HebbianApiError, HebbianClient, HebbianTimeoutError } from "../src/client.js";
 import { handleCapture } from "../src/tools/capture.js";
 
 const originalTimeout = process.env.HEBBIAN_TIMEOUT_MS;
@@ -26,20 +26,27 @@ afterEach(() => {
 describe("HebbianClient timeout and retry policy", () => {
   test("a hanging capture call fails with the configured timeout tool error", async () => {
     process.env.HEBBIAN_TIMEOUT_MS = "25";
+    const abortError = new DOMException("Aborted", "AbortError");
     fetchSpy.mockImplementation((_input, init) => new Promise((_resolve, reject) => {
       init?.signal?.addEventListener("abort", () => {
-        reject(init.signal?.reason ?? new DOMException("Aborted", "AbortError"));
+        reject(abortError);
       }, { once: true });
     }));
     const client = new HebbianClient("https://api.example.test", "test-token");
     const startedAt = Date.now();
+
+    await expect(client.post("/capture", { title: "T", body: "B" })).rejects.toMatchObject({
+      statusCode: null,
+      errorCode: "request_timeout",
+      cause: abortError,
+    } satisfies Partial<HebbianTimeoutError>);
 
     await expect(handleCapture(client, { title: "T", text: "B" })).rejects.toThrow(
       "Request timed out after 25ms. Set HEBBIAN_TIMEOUT_MS to a larger value if needed.",
     );
 
     expect(Date.now() - startedAt).toBeLessThan(300);
-    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
   });
 
   test("does not retry a POST when capture receives a 5xx response", async () => {

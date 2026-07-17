@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import tomllib
+from collections.abc import AsyncIterator
 from pathlib import Path
 
 import httpx
@@ -78,30 +79,28 @@ class TestTimeoutAndRetry:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setenv("HEBBIAN_TIMEOUT_MS", "25")
-        observed_timeouts: list[float] = []
 
-        class HangingMockServer:
-            def __init__(self, *, timeout: float) -> None:
-                observed_timeouts.append(timeout)
-                self._timeout = timeout
+        class SlowDripBody(httpx.AsyncByteStream):
+            async def __aiter__(self) -> AsyncIterator[bytes]:
+                while True:
+                    yield b" "
+                    await asyncio.sleep(0.01)
 
-            async def __aenter__(self) -> HangingMockServer:
-                return self
-
-            async def __aexit__(self, *args: object) -> None:
+            async def aclose(self) -> None:
                 return None
 
-            async def request(self, *args: object, **kwargs: object) -> httpx.Response:
-                await asyncio.sleep(self._timeout)
-                raise httpx.ReadTimeout("mock server did not respond")
+        async def slow_drip(
+            _transport: httpx.AsyncHTTPTransport, _request: httpx.Request
+        ) -> httpx.Response:
+            return httpx.Response(200, stream=SlowDripBody())
 
-        monkeypatch.setattr("hebbianvault_mcp.client.httpx.AsyncClient", HangingMockServer)
+        monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", slow_drip)
         client = HebbianClient("https://api.example.test", "test-token")
         started_at = asyncio.get_running_loop().time()
         with pytest.raises(RuntimeError, match="Request timed out after 25ms"):
             await handle_capture(client, {"title": "T", "text": "B"})
+
         assert asyncio.get_running_loop().time() - started_at < 0.3
-        assert observed_timeouts == [0.025]
 
     async def test_capture_post_is_not_retried_after_a_5xx(self) -> None:
         with respx.mock(assert_all_called=False) as mock:

@@ -16,12 +16,13 @@ export const DEFAULT_TIMEOUT_MS = 30_000;
 /** Structured API error returned by the Hebbian API (RFC 7807 variant). */
 export class HebbianApiError extends Error {
   constructor(
-    public readonly statusCode: number,
+    public readonly statusCode: number | null,
     public readonly errorCode: string,
     message: string,
     public readonly detail?: unknown,
+    options?: ErrorOptions,
   ) {
-    super(message);
+    super(message, options);
     this.name = "HebbianApiError";
   }
 
@@ -52,8 +53,8 @@ export class HebbianApiError extends Error {
 
 /** Raised when an API request exceeds the configured client-side deadline. */
 export class HebbianTimeoutError extends HebbianApiError {
-  constructor(public readonly timeoutMs: number) {
-    super(408, "request_timeout", `Request timed out after ${timeoutMs}ms.`);
+  constructor(public readonly timeoutMs: number, cause?: unknown) {
+    super(null, "request_timeout", `Request timed out after ${timeoutMs}ms.`, undefined, { cause });
     this.name = "HebbianTimeoutError";
   }
 
@@ -177,7 +178,7 @@ export class HebbianClient {
       return await fetch(url, { ...init, signal: controller.signal });
     } catch (error) {
       if (controller.signal.aborted) {
-        throw new HebbianTimeoutError(this.timeoutMs);
+        throw new HebbianTimeoutError(this.timeoutMs, error);
       }
       throw error;
     } finally {
