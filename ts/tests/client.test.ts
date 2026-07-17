@@ -24,6 +24,18 @@ afterEach(() => {
 });
 
 describe("HebbianClient timeout and retry policy", () => {
+  test("URL-encodes full-text search queries safely", async () => {
+    fetchSpy.mockResolvedValue(jsonResponse(200, { results: [] }));
+    const client = new HebbianClient("https://api.example.test", "test-token");
+
+    await client.get("/vault/search", { q: 'roadmap "café"', limit: 7 });
+
+    const url = new URL(String(fetchSpy.mock.calls[0][0]));
+    expect(url.pathname).toBe("/vault/search");
+    expect(url.searchParams.get("q")).toBe('roadmap "café"');
+    expect(url.searchParams.get("limit")).toBe("7");
+  });
+
   test("a hanging capture call fails with the configured timeout tool error", async () => {
     process.env.HEBBIAN_TIMEOUT_MS = "25";
     const abortError = new DOMException("Aborted", "AbortError");

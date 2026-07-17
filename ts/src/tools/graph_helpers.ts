@@ -8,6 +8,8 @@
  * archetype, tags, inline edges, and provenance. Several MCP tools
  * (search, traverse, provenance) are presentation-layer views over that
  * graph: the API returns the data, this module shapes it for the agent.
+ * Search normally uses /vault/search; it retains the graph path only for the
+ * company-scope compatibility fallback.
  * Access control is enforced server-side — the graph only ever contains
  * what the caller's token is allowed to see.
  */
@@ -101,6 +103,11 @@ async function graphPathFor(client: HebbianClient): Promise<string> {
     graphPathByClient.set(client, graphPath);
   }
   return graphPath;
+}
+
+/** Whether this token uses the company-graph compatibility path. */
+export async function isCompanyScope(client: HebbianClient): Promise<boolean> {
+  return (await graphPathFor(client)) === COMPANY_GRAPH_PATH;
 }
 
 /** Fetch the full scoped workspace graph for the current token. */

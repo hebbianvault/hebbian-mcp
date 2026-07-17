@@ -38,7 +38,7 @@ import {
   HEBBIAN_USAGE,
 } from "../src/tools/index.js";
 import { frameUntrustedText, UNTRUSTED_CONTENT_PREAMBLE } from "../src/tools/untrusted_content.js";
-import { fetchGraph, MAX_GRAPH_PAGES } from "../src/tools/graph_helpers.js";
+import { fetchGraph, MAX_GRAPH_PAGES, queryTerms, scoreNode } from "../src/tools/graph_helpers.js";
 
 // ── Mock client factory ───────────────────────────────────────────────────────
 
@@ -339,32 +339,97 @@ describe("hebbian_read_node", () => {
   });
 });
 
-// ── hebbian_search (graph-derived) ─────────────────────────────────────────────
+// ── hebbian_search ─────────────────────────────────────────────────────────────
 
 describe("hebbian_search", () => {
-  test("fetches /vault/graph and ranks results", async () => {
-    const get = jest.fn().mockResolvedValue(graph());
+  test("returns a body-only match from /vault/search, never the graph scan", async () => {
+    const fixture = {
+      uuid: "body-only",
+      title: "Meeting notes",
+      summary: "No matching term appears in this summary.",
+      domain: "Company",
+      archetype: "MOLECULE",
+    };
+    const get = jest.fn((path: string) => {
+      if (path === "/tenant/whoami") return Promise.resolve({ token_scope: "employee" });
+      if (path === "/vault/search") {
+        return Promise.resolve({
+          results: [fixture],
+        });
+      }
+      return Promise.resolve({ nodes: [] });
+    });
     const client = mockClient({ get });
+    const terms = queryTerms("body-only-term");
 
-    const out = JSON.parse(await handleSearch(client, { q: "strategy roadmap", limit: 5 }));
+    const out = JSON.parse(await handleSearch(client, { q: "body-only-term", limit: 5 }));
 
-    expect(get).toHaveBeenCalledWith("/vault/graph");
-    expect(out.count).toBeGreaterThan(0);
-    expect(out.results[0].uuid).toBe("n1"); // title match outranks body match
-    expectFramed(out.results[0].title, "2026 Company Strategy");
-    expectFramed(out.results[0].snippet, "The annual company strategy and roadmap.");
+    expect(scoreNode(fixture, terms)).toBe(0);
+    expect(get).toHaveBeenCalledWith("/vault/search", { q: "body-only-term", limit: 5 });
+    expect(get).not.toHaveBeenCalledWith("/vault/graph");
+    expect(out.results[0].uuid).toBe("body-only");
+    expectFramed(out.results[0].title, "Meeting notes");
+    expectFramed(out.results[0].snippet, "No matching term appears in this summary.");
   });
 
   test("filters by domain", async () => {
-    const client = mockClient({ get: jest.fn().mockResolvedValue(graph()) });
+    const get = jest.fn()
+      .mockResolvedValueOnce({ token_scope: "employee" })
+      .mockResolvedValueOnce({ results: [
+        { uuid: "company", title: "Roadmap", summary: "Company plan", domain: "Company" },
+        { uuid: "crm", title: "Roadmap", summary: "CRM plan", domain: "CRM" },
+      ] });
+    const client = mockClient({ get });
     const out = JSON.parse(await handleSearch(client, { q: "roadmap", domain: "Company" }));
     expect(out.results.every((r: { domain: string }) => r.domain === "Company")).toBe(true);
   });
 
-  test("clamps limit to 50", async () => {
-    const client = mockClient({ get: jest.fn().mockResolvedValue(graph()) });
-    const out = JSON.parse(await handleSearch(client, { q: "strategy", limit: 999 }));
-    expect(out.count).toBeLessThanOrEqual(50);
+  test("fetches the client maximum before filtering employee FTS results by domain", async () => {
+    const get = jest.fn()
+      .mockResolvedValueOnce({ token_scope: "employee" })
+      .mockResolvedValueOnce({ results: [
+        { uuid: "crm-1", title: "Roadmap", domain: "CRM" },
+        { uuid: "crm-2", title: "Roadmap", domain: "CRM" },
+        { uuid: "company-match", title: "Roadmap", domain: "Company" },
+      ] });
+
+    const out = JSON.parse(await handleSearch(mockClient({ get }), {
+      q: "roadmap", domain: "Company", limit: 2,
+    }));
+
+    expect(get).toHaveBeenCalledWith("/vault/search", { q: "roadmap", limit: 50 });
+    expect(out.results.map((result: { uuid: string }) => result.uuid)).toEqual(["company-match"]);
+  });
+
+  test("routes company tokens through the company graph without calling employee FTS", async () => {
+    const get = jest.fn((path: string) => {
+      if (path === "/tenant/whoami") return Promise.resolve({ token_scope: "company" });
+      if (path === "/vault/company-graph") return Promise.resolve(graph());
+      throw new Error(`unexpected endpoint: ${path}`);
+    });
+
+    const out = JSON.parse(await handleSearch(mockClient({ get }), { q: "strategy" }));
+
+    expect(out.results[0].uuid).toBe("n1");
+    expect(get).toHaveBeenCalledWith("/vault/company-graph");
+    expect(get).not.toHaveBeenCalledWith("/vault/search", expect.anything());
+  });
+
+  test("passes the clamped limit through to FTS", async () => {
+    const get = jest.fn()
+      .mockResolvedValueOnce({ token_scope: "employee" })
+      .mockResolvedValueOnce({ results: [] });
+    await handleSearch(mockClient({ get }), { q: "strategy", limit: 999 });
+    expect(get).toHaveBeenCalledWith("/vault/search", { q: "strategy", limit: 50 });
+  });
+
+  test("renders an empty-result message", async () => {
+    const get = jest.fn()
+      .mockResolvedValueOnce({ token_scope: "employee" })
+      .mockResolvedValueOnce({ results: [] });
+    const out = JSON.parse(await handleSearch(mockClient({ get }), { q: "missing" }));
+    expect(out).toMatchObject({ count: 0, results: [] });
+    expectFramed(out.message, "No matching nodes found.");
   });
 
   test("throws on empty query", async () => {

@@ -4,10 +4,9 @@
  * Tool: hebbian_search
  * Search the workspace for nodes matching a query.
  *
- * The Hebbian API exposes the workspace as a scoped graph (GET /vault/graph),
- * already filtered to what the caller's token may see. This tool ranks that
- * graph against the query and returns the best matches. The graph is the
- * authoritative source; ranking is a thin presentation layer.
+ * Employee-scoped search uses the API's full-text endpoint so matches in note
+ * bodies are returned. Company-scoped tokens retain the company-graph fallback
+ * because /vault/search intentionally uses the employee-union RLS view.
  */
 
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
@@ -15,6 +14,7 @@ import type { HebbianClient } from "../client.js";
 import { HebbianApiError } from "../client.js";
 import {
   fetchGraph,
+  isCompanyScope,
   queryTerms,
   scoreNode,
   summarise,
@@ -25,7 +25,7 @@ import { stringifyUntrustedResult } from "./untrusted_content.js";
 export const HEBBIAN_SEARCH: Tool = {
   name: "hebbian_search",
   description:
-    "Search your Hebbian workspace for nodes matching a query. Returns a ranked " +
+    "Search your Hebbian workspace by title, summary, and note body. Returns a ranked " +
     "list of matching nodes with their UUID, title, domain, archetype, tags, and " +
     "a snippet. Use this as the starting point for exploring the workspace when " +
     "you have a topic or question. The 'domain' param filters by knowledge area " +
@@ -63,6 +63,10 @@ interface SearchArgs {
   limit?: number;
 }
 
+interface SearchResponse {
+  results?: GraphNode[];
+}
+
 export async function handleSearch(
   client: HebbianClient,
   args: SearchArgs,
@@ -74,26 +78,49 @@ export async function handleSearch(
   }
 
   const cap = Math.min(Math.max(1, limit), 50);
-  const terms = queryTerms(q);
+  const trimmedQuery = q.trim();
 
   try {
-    let nodes: GraphNode[] = await fetchGraph(client);
-
-    if (domain) {
-      const d = domain.toLowerCase();
-      nodes = nodes.filter((n) => (n.domain ?? "").toLowerCase() === d);
+    let ranked: Record<string, unknown>[];
+    if (await isCompanyScope(client)) {
+      // /vault/search is employee-union scoped even for company tokens. Keep
+      // Plan 2.1's company-graph behaviour until the API offers an org-wide FTS view.
+      let nodes: GraphNode[] = await fetchGraph(client);
+      if (domain) {
+        const d = domain.toLowerCase();
+        nodes = nodes.filter((n) => (n.domain ?? "").toLowerCase() === d);
+      }
+      const terms = queryTerms(trimmedQuery);
+      ranked = nodes
+        .map((n) => ({ n, score: scoreNode(n, terms) }))
+        .filter((x) => x.score > 0)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, cap)
+        .map((x) => summarise(x.n));
+    } else {
+      const response = (await client.get("/vault/search", {
+        q: trimmedQuery,
+        // Domain filtering happens locally because the FTS endpoint does not
+        // accept a domain filter. Fetch the client maximum first so matches
+        // ranked below the caller's window are not lost before filtering.
+        limit: domain ? 50 : cap,
+      })) as SearchResponse;
+      let results = Array.isArray(response.results) ? response.results : [];
+      if (domain) {
+        const d = domain.toLowerCase();
+        results = results.filter((n) => (n.domain ?? "").toLowerCase() === d);
+      }
+      ranked = results.slice(0, cap).map(summarise);
     }
 
-    const ranked = nodes
-      .map((n) => ({ n, score: scoreNode(n, terms) }))
-      .filter((x) => x.score > 0)
-      .sort((a, b) => b.score - a.score)
-      .slice(0, cap)
-      .map((x) => summarise(x.n));
-
-    return stringifyUntrustedResult(
-      { query: q.trim(), domain: domain ?? null, count: ranked.length, results: ranked },
-    );
+    const result: Record<string, unknown> = {
+      query: trimmedQuery,
+      domain: domain ?? null,
+      count: ranked.length,
+      results: ranked,
+    };
+    if (ranked.length === 0) result.message = "No matching nodes found.";
+    return stringifyUntrustedResult(result);
   } catch (err) {
     if (err instanceof HebbianApiError) {
       throw new Error(err.toToolError());
