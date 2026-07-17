@@ -16,6 +16,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, call
 
 import pytest
+
 from hebbianvault_mcp.client import HebbianApiError, HebbianClient
 from hebbianvault_mcp.tools import (
     TOOL_SCHEMAS,
