@@ -14,7 +14,7 @@ The adapter is a thin client. Your token goes in; the Hebbian service decides wh
 
 ## Install
 
-Both packages are published and expose the same 10 tools and the same configuration. Use whichever matches your MCP host.
+Both packages are published and expose the same 11 tools and the same configuration. Use whichever matches your MCP host.
 
 ```bash
 # Node.js (npm) — run directly, no global install needed
@@ -33,7 +33,7 @@ See [Quick start (TypeScript)](#quick-start-typescript) and [Quick start (Python
 | `@hebbianvault/mcp` | TypeScript / Node.js | `npm install -g @hebbianvault/mcp` |
 | `hebbianvault-mcp` | Python | `pip install hebbianvault-mcp` |
 
-Both expose the same 10 tools and the same configuration. Use whichever matches your MCP host.
+Both expose the same 11 tools and the same configuration. Use whichever matches your MCP host.
 
 ## Quick start (TypeScript)
 
@@ -165,6 +165,7 @@ Generate, name, and revoke tokens from the AI Tools tab of your Hebbian integrat
 | `hebbian_salience` | See a node's recent activity over time |
 | `hebbian_recent_activity` | Catch up on recent changes in your workspace |
 | `hebbian_whoami` | Show the tenant, role, scope, and principal for your token |
+| `hebbian_usage` | Show your usage and spend-meter summary; optionally view company usage |
 
 All access control is decided by the Hebbian service; results only ever include what your token is allowed to see.
 

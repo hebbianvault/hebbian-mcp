@@ -144,6 +144,7 @@ Your token decides what the adapter can see and do — a personal-workspace toke
 | `hebbian_salience` | See a node's recent activity over time |
 | `hebbian_recent_activity` | Catch up on recent changes in your workspace |
 | `hebbian_whoami` | Show the tenant, role, scope, and principal for your token |
+| `hebbian_usage` | Show your usage and spend-meter summary; optionally view company usage |
 
 Results only ever include what your token is allowed to see.
 
@@ -188,7 +189,7 @@ Every run prints a summary of how many files were skipped and how many strings w
 
 ## Python
 
-A Python sibling package is available as `hebbianvault-mcp` on PyPI. Same 10 tools, same configuration.
+A Python sibling package is available as `hebbianvault-mcp` on PyPI. Same 11 tools, same configuration.
 
 ## Development
 

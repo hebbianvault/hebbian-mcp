@@ -1,5 +1,5 @@
 """
-hebbianvault_mcp.tools — All 10 Hebbian MCP tool definitions + handlers.
+hebbianvault_mcp.tools — All 11 Hebbian MCP tool definitions + handlers.
 
 Each tool handler takes a HebbianClient and returns a JSON-serialisable string.
 
@@ -333,6 +333,28 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
             "additionalProperties": False,
         },
     },
+    {
+        "name": "hebbian_usage",
+        "description": (
+            "Show your current Hebbian usage and spend-meter summary. Set 'company' to "
+            "true for the company-wide view, including employee summaries; that view "
+            "requires an Owner/Admin or company-scope token."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "company": {
+                    "type": "boolean",
+                    "description": (
+                        "Return the company-wide usage view. Default: false (your employee "
+                        "and company summaries)."
+                    ),
+                    "default": False,
+                },
+            },
+            "additionalProperties": False,
+        },
+    },
 ]
 
 
@@ -641,6 +663,24 @@ async def handle_whoami(client: HebbianClient, args: dict[str, Any]) -> str:
         raise RuntimeError(exc.to_tool_error()) from exc
 
 
+async def handle_usage(client: HebbianClient, args: dict[str, Any]) -> str:
+    """Return caller usage, or the company roll-up when the token permits it."""
+    company = args.get("company", False) is True
+    try:
+        result = await client.get("/usage/company" if company else "/usage/me")
+        return _stringify_untrusted_result(result)
+    except HebbianApiError as exc:
+        if company and exc.status_code == 403:
+            return _stringify_untrusted_result(
+                {
+                    "message": (
+                        "Company usage view requires an Owner/Admin role or a company-scope token."
+                    )
+                }
+            )
+        raise RuntimeError(exc.to_tool_error()) from exc
+
+
 # ── Dispatch table (tool name → handler) ──────────────────────────────────────
 
 TOOL_HANDLERS: dict[str, Any] = {
@@ -654,6 +694,7 @@ TOOL_HANDLERS: dict[str, Any] = {
     "hebbian_salience": handle_salience,
     "hebbian_recent_activity": handle_recent_activity,
     "hebbian_whoami": handle_whoami,
+    "hebbian_usage": handle_usage,
 }
 
 
