@@ -16,7 +16,7 @@
  * print an honest summary.
  */
 
-import { readdirSync, readFileSync, statSync } from "node:fs";
+import { lstatSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 
 import { redactSecrets, shouldSkipFile } from "./secrets.js";
@@ -40,6 +40,7 @@ export interface AbsorbItem {
 export interface ScanResult {
   items: AbsorbItem[];
   skippedSecretFiles: string[];
+  skippedSymlinks: string[];
   redactedItems: number;
   redactedSecrets: number;
 }
@@ -68,9 +69,10 @@ export function supportedStores(): readonly string[] {
   return SUPPORTED_STORES;
 }
 
-/** Recursively collect every *.md file under root (relative paths). */
-function collectMarkdownFiles(root: string): string[] {
+/** Recursively collect every *.md file under root, skipping symlinks. */
+function collectMarkdownFiles(root: string): { files: string[]; skippedSymlinks: string[] } {
   const out: string[] = [];
+  const skippedSymlinks: string[] = [];
   const walk = (dir: string): void => {
     let entries: string[];
     try {
@@ -82,8 +84,12 @@ function collectMarkdownFiles(root: string): string[] {
       const abs = join(dir, entry);
       let st;
       try {
-        st = statSync(abs);
+        st = lstatSync(abs);
       } catch {
+        continue;
+      }
+      if (st.isSymbolicLink()) {
+        skippedSymlinks.push(relative(root, abs));
         continue;
       }
       if (st.isDirectory()) {
@@ -96,7 +102,7 @@ function collectMarkdownFiles(root: string): string[] {
     }
   };
   walk(root);
-  return out.sort();
+  return { files: out.sort(), skippedSymlinks: skippedSymlinks.sort() };
 }
 
 /** First markdown heading in the content, else the basename without extension. */
@@ -119,7 +125,7 @@ function deriveTitle(content: string, relPath: string): string {
  * is exactly what a Claude Code memory directory contains.
  */
 export function scanDirectory(root: string, storeKind: string): ScanResult {
-  const rel = collectMarkdownFiles(root);
+  const { files: rel, skippedSymlinks } = collectMarkdownFiles(root);
   const items: AbsorbItem[] = [];
   const skippedSecretFiles: string[] = [];
   let redactedItems = 0;
@@ -157,5 +163,5 @@ export function scanDirectory(root: string, storeKind: string): ScanResult {
     });
   }
 
-  return { items, skippedSecretFiles, redactedItems, redactedSecrets };
+  return { items, skippedSecretFiles, skippedSymlinks, redactedItems, redactedSecrets };
 }

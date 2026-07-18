@@ -25,7 +25,8 @@ USAGE = "\n".join(
         "  --dry-run  walk and report; do not upload",
         "",
         "Auth: set HEBBIAN_API_TOKEN to the agent's token (or use the config file).",
-        "Reads *.md files, skips credential-named files, redacts token-shaped strings,",
+        "Reads *.md files, skips credential-named files and symlinks, "
+        "redacts token-shaped strings,",
         "then uploads each file as a review-lane seed attributed to the agent.",
     ]
 )
@@ -94,12 +95,15 @@ async def run_absorb(argv: Sequence[str], stderr: TextIO | None = None) -> int:
     print(
         f"[absorb] store={args.store} dir={args.directory}: {len(scan.items)} file(s) to absorb, "
         f"skipped {len(scan.skipped_secret_files)} credential-named file(s), "
+        f"skipped {len(scan.skipped_symlinks)} symlink(s), "
         f"redacted {scan.redacted_secrets} token-shaped string(s) across "
         f"{scan.redacted_items} file(s)",
         file=output,
     )
     for filename in scan.skipped_secret_files:
         print(f"[absorb]   skipped (looks like secrets): {filename}", file=output)
+    for filename in scan.skipped_symlinks:
+        print(f"[absorb]   skipped (symlink): {filename}", file=output)
 
     if not scan.items:
         print("[absorb] nothing to absorb.", file=output)

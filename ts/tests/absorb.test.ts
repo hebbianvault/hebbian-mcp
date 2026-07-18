@@ -12,12 +12,33 @@
  */
 
 import { describe, test, expect, beforeAll, afterAll } from "@jest/globals";
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { shouldSkipFile, redactSecrets } from "../src/absorb/secrets.js";
 import { scanDirectory, isSupportedStore } from "../src/absorb/importers.js";
+
+function symlinkTestSupport(): { available: boolean; reason: string } {
+  const dir = mkdtempSync(join(tmpdir(), "absorb-symlink-probe-"));
+  try {
+    const target = join(dir, "target");
+    writeFileSync(target, "probe\n");
+    symlinkSync(target, join(dir, "link"), "file");
+    return { available: true, reason: "" };
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    return { available: false, reason };
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+const SYMLINK_TEST_SUPPORT = symlinkTestSupport();
+const symlinkTest = SYMLINK_TEST_SUPPORT.available ? test : test.skip;
+const symlinkTestSuffix = SYMLINK_TEST_SUPPORT.available
+  ? ""
+  : ` (skipped: symlink creation unavailable: ${SYMLINK_TEST_SUPPORT.reason})`;
 
 describe("secrets.shouldSkipFile", () => {
   test("skips env and credential-named files", () => {
@@ -204,5 +225,55 @@ describe("importers.scanDirectory", () => {
     expect(mem?.title).toBe("Memory index");
     expect(mem?.store_kind).toBe("markdown");
     expect(typeof mem?.updated_at).toBe("string");
+  });
+
+  symlinkTest(`skips a symlinked directory that points outside the scan root${symlinkTestSuffix}`, () => {
+    const root = mkdtempSync(join(tmpdir(), "absorb-symlink-dir-test-"));
+    const outside = mkdtempSync(join(tmpdir(), "absorb-symlink-outside-"));
+    try {
+      writeFileSync(join(root, "kept.md"), "# Kept\n");
+      writeFileSync(join(outside, "outside.md"), "# Outside\n");
+      symlinkSync(outside, join(root, "outside-link"), "dir");
+
+      const result = scanDirectory(root, "markdown");
+
+      expect(result.items.map((item) => item.source_id)).toEqual(["kept.md"]);
+      expect(result.skippedSymlinks).toEqual(["outside-link"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  symlinkTest(`skips a symlinked markdown file${symlinkTestSuffix}`, () => {
+    const root = mkdtempSync(join(tmpdir(), "absorb-symlink-file-test-"));
+    const outside = mkdtempSync(join(tmpdir(), "absorb-symlink-file-outside-"));
+    try {
+      writeFileSync(join(outside, "outside.md"), "# Outside\n");
+      symlinkSync(join(outside, "outside.md"), join(root, "linked.md"), "file");
+
+      const result = scanDirectory(root, "markdown");
+
+      expect(result.items).toEqual([]);
+      expect(result.skippedSymlinks).toEqual(["linked.md"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+
+  symlinkTest(`skips a symlink loop without error${symlinkTestSuffix}`, () => {
+    const root = mkdtempSync(join(tmpdir(), "absorb-symlink-loop-test-"));
+    try {
+      writeFileSync(join(root, "kept.md"), "# Kept\n");
+      symlinkSync("..", join(root, "a"), "dir");
+
+      const result = scanDirectory(root, "markdown");
+
+      expect(result.items.map((item) => item.source_id)).toEqual(["kept.md"]);
+      expect(result.skippedSymlinks).toEqual(["a"]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
