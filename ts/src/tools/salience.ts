@@ -10,6 +10,7 @@
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import type { HebbianClient } from "../client.js";
 import { HebbianApiError } from "../client.js";
+import { invalidateGraphCache } from "./graph_helpers.js";
 import { stringifyUntrustedResult } from "./untrusted_content.js";
 
 export const HEBBIAN_SALIENCE: Tool = {
@@ -53,6 +54,9 @@ export async function handleSalience(
     const result = await client.get(
       `/metrics/nodes/${encodeURIComponent(uuid.trim())}/activation-history`,
     );
+    // Reading salience reinforces graph edges server-side, so discard any
+    // graph snapshot fetched before this request.
+    invalidateGraphCache(client);
     return stringifyUntrustedResult(result);
   } catch (err) {
     if (err instanceof HebbianApiError) {

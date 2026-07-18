@@ -256,6 +256,38 @@ class TestGraphScopeRouting:
         )
 
     @pytest.mark.asyncio
+    async def test_deduplicates_overlapping_paginated_nodes_keeps_first_occurrence(self) -> None:
+        client = mock_client(
+            get_side_effect=[
+                {"token_scope": "employee"},
+                {
+                    "nodes": [
+                        {"uuid": "n1", "title": "First copy"},
+                        {"uuid": "n2", "title": "Second node"},
+                    ],
+                    "next_cursor": "page-2",
+                },
+                {
+                    "nodes": [
+                        {"uuid": "n1", "title": "Overlapping copy"},
+                        {"uuid": "n3", "title": "Third node"},
+                    ],
+                    "next_cursor": None,
+                },
+            ],
+        )
+        client.graph_pagination = True
+
+        nodes, truncated = await _fetch_graph(client)
+
+        assert nodes == [
+            {"uuid": "n1", "title": "First copy"},
+            {"uuid": "n2", "title": "Second node"},
+            {"uuid": "n3", "title": "Third node"},
+        ]
+        assert truncated is False
+
+    @pytest.mark.asyncio
     async def test_traverse_and_provenance_share_one_cached_graph_fetch(self) -> None:
         client = mock_client(
             get_side_effect=[
@@ -314,6 +346,38 @@ class TestGraphScopeRouting:
         output = json.loads(await handle_traverse(client, {"start_uuid": "new-node"}))
 
         assert [node["uuid"] for node in output["nodes"]] == ["new-node"]
+        assert client.get.await_args_list.count(call("/vault/graph", {"limit": 1000})) == 2
+
+    @pytest.mark.asyncio
+    async def test_salience_reinforcement_invalidates_paginated_graph_cache(self) -> None:
+        client = mock_client(
+            get_side_effect=[
+                {"token_scope": "employee"},
+                {
+                    "nodes": [
+                        {"uuid": "n1", "edges": [{"to": "n2", "weight": 0.2}]},
+                        {"uuid": "n2", "edges": []},
+                    ],
+                    "next_cursor": None,
+                },
+                {"node_uuid": "n1", "history": []},
+                {
+                    "nodes": [
+                        {"uuid": "n1", "edges": [{"to": "n2", "weight": 0.9}]},
+                        {"uuid": "n2", "edges": []},
+                    ],
+                    "next_cursor": None,
+                },
+            ],
+        )
+        client.graph_pagination = True
+
+        before = json.loads(await handle_traverse(client, {"start_uuid": "n1", "max_hops": 1}))
+        await handle_salience(client, {"uuid": "n1"})
+        after = json.loads(await handle_traverse(client, {"start_uuid": "n1", "max_hops": 1}))
+
+        assert before["edges"][0]["weight"] == 0.2
+        assert after["edges"][0]["weight"] == 0.9
         assert client.get.await_args_list.count(call("/vault/graph", {"limit": 1000})) == 2
 
     @pytest.mark.asyncio
