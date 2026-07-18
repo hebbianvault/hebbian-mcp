@@ -183,8 +183,12 @@ async function fetchGraphUncached(client: HebbianClient): Promise<GraphFetchResu
       for (const node of resp.nodes) {
         // Cursor pages should be disjoint, but retaining the first occurrence
         // keeps a bad overlapping response from affecting graph-derived scores.
-        if (seenNodeUuids.has(node.uuid)) continue;
-        seenNodeUuids.add(node.uuid);
+        // Only string uuids participate in dedup (matching the py package);
+        // uuid-less nodes pass through rather than colliding on undefined.
+        if (typeof node.uuid === "string") {
+          if (seenNodeUuids.has(node.uuid)) continue;
+          seenNodeUuids.add(node.uuid);
+        }
         nodes.push(node);
       }
     }
