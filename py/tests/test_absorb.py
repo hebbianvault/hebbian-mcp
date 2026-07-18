@@ -6,6 +6,8 @@ from io import StringIO
 from pathlib import Path
 from typing import Any
 
+import pytest
+
 from hebbianvault_mcp.absorb import cli, importers
 from hebbianvault_mcp.absorb.importers import is_supported_store, scan_directory
 from hebbianvault_mcp.absorb.secrets import redact_secrets, should_skip_file
@@ -184,6 +186,51 @@ class TestImporters:
 
         assert result.items[0].created_at is None
         assert "created_at" not in result.items[0].as_dict()
+
+    def test_scan_directory_skips_symlinked_directory_outside_root(self, tmp_path: Path) -> None:
+        root = tmp_path / "root"
+        outside = tmp_path / "outside"
+        root.mkdir()
+        outside.mkdir()
+        (root / "kept.md").write_text("# Kept\n")
+        (outside / "outside.md").write_text("# Outside\n")
+        try:
+            (root / "outside-link").symlink_to(outside, target_is_directory=True)
+        except OSError as error:
+            pytest.skip(f"symlink creation unavailable on this platform: {error}")
+
+        result = scan_directory(root, "markdown")
+
+        assert [item.source_id for item in result.items] == ["kept.md"]
+        assert result.skipped_symlinks == ["outside-link"]
+
+    def test_scan_directory_skips_symlinked_markdown_file(self, tmp_path: Path) -> None:
+        root = tmp_path / "root"
+        outside = tmp_path / "outside"
+        root.mkdir()
+        outside.mkdir()
+        (outside / "outside.md").write_text("# Outside\n")
+        try:
+            (root / "linked.md").symlink_to(outside / "outside.md")
+        except OSError as error:
+            pytest.skip(f"symlink creation unavailable on this platform: {error}")
+
+        result = scan_directory(root, "markdown")
+
+        assert result.items == []
+        assert result.skipped_symlinks == ["linked.md"]
+
+    def test_scan_directory_skips_symlink_loop_without_error(self, tmp_path: Path) -> None:
+        (tmp_path / "kept.md").write_text("# Kept\n")
+        try:
+            (tmp_path / "a").symlink_to("..", target_is_directory=True)
+        except OSError as error:
+            pytest.skip(f"symlink creation unavailable on this platform: {error}")
+
+        result = scan_directory(tmp_path, "markdown")
+
+        assert [item.source_id for item in result.items] == ["kept.md"]
+        assert result.skipped_symlinks == ["a"]
 
 
 async def test_absorb_batches_at_200_and_posts_existing_client_payload(

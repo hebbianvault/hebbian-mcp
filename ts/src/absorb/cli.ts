@@ -71,7 +71,7 @@ const USAGE = [
   "  --dry-run  walk and report; do not upload",
   "",
   "Auth: set HEBBIAN_API_TOKEN to the agent's token (or use the config file).",
-  "Reads *.md files, skips credential-named files, redacts token-shaped strings,",
+  "Reads *.md files, skips credential-named files and symlinks, redacts token-shaped strings,",
   "then uploads each file as a review-lane seed attributed to the agent.",
 ].join("\n");
 
@@ -124,11 +124,17 @@ export async function runAbsorb(argv: string[]): Promise<number> {
     `[absorb] store=${args.store} dir=${args.dir}: ` +
       `${scan.items.length} file(s) to absorb, ` +
       `skipped ${scan.skippedSecretFiles.length} credential-named file(s), ` +
+      `skipped ${scan.skippedSymlinks.length} symlink(s), ` +
       `redacted ${scan.redactedSecrets} token-shaped string(s) across ${scan.redactedItems} file(s)\n`,
   );
   if (scan.skippedSecretFiles.length > 0) {
     for (const f of scan.skippedSecretFiles) {
       process.stderr.write(`[absorb]   skipped (looks like secrets): ${f}\n`);
+    }
+  }
+  if (scan.skippedSymlinks.length > 0) {
+    for (const f of scan.skippedSymlinks) {
+      process.stderr.write(`[absorb]   skipped (symlink): ${f}\n`);
     }
   }
 

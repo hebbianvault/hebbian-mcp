@@ -48,6 +48,7 @@ class ScanResult:
 
     items: list[AbsorbItem]
     skipped_secret_files: list[str]
+    skipped_symlinks: list[str]
     redacted_items: int
     redacted_secrets: int
 
@@ -62,9 +63,10 @@ def supported_stores() -> tuple[str, ...]:
     return SUPPORTED_STORES
 
 
-def _collect_markdown_files(root: Path) -> list[Path]:
-    """Collect every Markdown file below ``root``, skipping known noise dirs."""
+def _collect_markdown_files(root: Path) -> tuple[list[Path], list[Path]]:
+    """Collect Markdown files below ``root`` and report skipped symlinks."""
     output: list[Path] = []
+    skipped_symlinks: list[Path] = []
 
     def walk(directory: Path) -> None:
         try:
@@ -73,6 +75,9 @@ def _collect_markdown_files(root: Path) -> list[Path]:
             return
         for entry in entries:
             try:
+                if entry.is_symlink():
+                    skipped_symlinks.append(entry.relative_to(root))
+                    continue
                 if entry.is_dir():
                     if entry.name not in SKIP_DIRS:
                         walk(entry)
@@ -82,7 +87,10 @@ def _collect_markdown_files(root: Path) -> list[Path]:
                 continue
 
     walk(root)
-    return sorted(output, key=lambda path: path.as_posix())
+    return (
+        sorted(output, key=lambda path: path.as_posix()),
+        sorted(skipped_symlinks, key=lambda path: path.as_posix()),
+    )
 
 
 def _derive_title(content: str, relative_path: Path) -> str:
@@ -110,10 +118,12 @@ def scan_directory(root: str | Path, store_kind: str) -> ScanResult:
     root_path = Path(root)
     items: list[AbsorbItem] = []
     skipped_secret_files: list[str] = []
+    relative_symlinks: list[Path]
     redacted_items = 0
     redacted_secrets = 0
 
-    for relative_path in _collect_markdown_files(root_path):
+    relative_paths, relative_symlinks = _collect_markdown_files(root_path)
+    for relative_path in relative_paths:
         source_id = relative_path.as_posix()
         if should_skip_file(relative_path.name):
             skipped_secret_files.append(source_id)
@@ -142,6 +152,7 @@ def scan_directory(root: str | Path, store_kind: str) -> ScanResult:
     return ScanResult(
         items=items,
         skipped_secret_files=skipped_secret_files,
+        skipped_symlinks=[path.as_posix() for path in relative_symlinks],
         redacted_items=redacted_items,
         redacted_secrets=redacted_secrets,
     )
