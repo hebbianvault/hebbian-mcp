@@ -293,6 +293,37 @@ describe("fetchGraph", () => {
     expect(get).toHaveBeenCalledTimes(3);
   });
 
+  test("deduplicates overlapping paginated graph nodes, keeping the first occurrence", async () => {
+    const get = jest
+      .fn()
+      .mockResolvedValueOnce({ token_scope: "employee" })
+      .mockResolvedValueOnce({
+        nodes: [
+          { uuid: "n1", title: "First copy" },
+          { uuid: "n2", title: "Second node" },
+        ],
+        next_cursor: "page-2",
+      })
+      .mockResolvedValueOnce({
+        nodes: [
+          { uuid: "n1", title: "Overlapping copy" },
+          { uuid: "n3", title: "Third node" },
+        ],
+        next_cursor: null,
+      });
+
+    const graphResult = await fetchGraph(mockClient({ get, graphPagination: true }));
+
+    expect(graphResult).toEqual({
+      nodes: [
+        { uuid: "n1", title: "First copy" },
+        { uuid: "n2", title: "Second node" },
+        { uuid: "n3", title: "Third node" },
+      ],
+      truncated: false,
+    });
+  });
+
   test("returns the first-page nodes from a server without pagination support", async () => {
     const get = jest.fn().mockResolvedValue({ nodes: [{ uuid: "n1" }] });
 
@@ -412,6 +443,30 @@ describe("fetchGraph", () => {
     const output = JSON.parse(await handleTraverse(client, { start_uuid: "new-node" }));
 
     expect(output.nodes.map((node: { uuid: string }) => node.uuid)).toContain("new-node");
+    expect(get.mock.calls.filter(([path]) => path === "/vault/graph")).toHaveLength(2);
+  });
+
+  test("invalidates the cached graph after salience reinforcement", async () => {
+    const get = jest
+      .fn()
+      .mockResolvedValueOnce({ token_scope: "employee" })
+      .mockResolvedValueOnce({
+        nodes: [{ uuid: "n1", edges: [{ to: "n2", weight: 0.2 }] }, { uuid: "n2", edges: [] }],
+        next_cursor: null,
+      })
+      .mockResolvedValueOnce({ node_uuid: "n1", history: [] })
+      .mockResolvedValueOnce({
+        nodes: [{ uuid: "n1", edges: [{ to: "n2", weight: 0.9 }] }, { uuid: "n2", edges: [] }],
+        next_cursor: null,
+      });
+    const client = mockClient({ get, graphPagination: true });
+
+    const before = JSON.parse(await handleTraverse(client, { start_uuid: "n1", max_hops: 1 }));
+    await handleSalience(client, { uuid: "n1" });
+    const after = JSON.parse(await handleTraverse(client, { start_uuid: "n1", max_hops: 1 }));
+
+    expect(before.edges[0].weight).toBe(0.2);
+    expect(after.edges[0].weight).toBe(0.9);
     expect(get.mock.calls.filter(([path]) => path === "/vault/graph")).toHaveLength(2);
   });
 

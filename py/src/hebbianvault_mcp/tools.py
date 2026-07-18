@@ -507,6 +507,7 @@ async def _fetch_graph_uncached(client: HebbianClient) -> tuple[list[dict[str, A
         return (nodes if isinstance(nodes, list) else [], False)
 
     nodes: list[dict[str, Any]] = []
+    seen_node_uuids: set[str] = set()
     cursor: str | None = None
     for page in range(MAX_GRAPH_PAGES):
         params: dict[str, Any] = {"limit": GRAPH_PAGE_LIMIT}
@@ -515,7 +516,17 @@ async def _fetch_graph_uncached(client: HebbianClient) -> tuple[list[dict[str, A
         resp = await client.get(path, params)
         page_nodes = resp.get("nodes") if isinstance(resp, dict) else None
         if isinstance(page_nodes, list):
-            nodes.extend(node for node in page_nodes if isinstance(node, dict))
+            for node in page_nodes:
+                if not isinstance(node, dict):
+                    continue
+                uuid = node.get("uuid")
+                # Cursor pages should be disjoint, but retain the first node if
+                # a server response overlaps a prior page.
+                if isinstance(uuid, str):
+                    if uuid in seen_node_uuids:
+                        continue
+                    seen_node_uuids.add(uuid)
+                nodes.append(node)
 
         if not isinstance(resp, dict):
             return nodes, False
@@ -878,6 +889,9 @@ async def handle_salience(client: HebbianClient, args: dict[str, Any]) -> str:
     uuid = _require_str(args, "uuid")
     try:
         result = await client.get(f"/metrics/nodes/{uuid}/activation-history")
+        # The server reinforces graph edges while serving salience, so a graph
+        # snapshot fetched beforehand must not be reused.
+        _invalidate_graph_cache(client)
         return _stringify_untrusted_result(result)
     except HebbianApiError as exc:
         raise RuntimeError(exc.to_tool_error()) from exc

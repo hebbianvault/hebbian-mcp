@@ -170,6 +170,7 @@ async function fetchGraphUncached(client: HebbianClient): Promise<GraphFetchResu
   }
 
   const nodes: GraphNode[] = [];
+  const seenNodeUuids = new Set<string>();
   let cursor: string | undefined;
 
   for (let page = 0; page < MAX_GRAPH_PAGES; page++) {
@@ -178,7 +179,15 @@ async function fetchGraphUncached(client: HebbianClient): Promise<GraphFetchResu
       : { limit: GRAPH_PAGE_LIMIT, cursor };
     const resp = (await client.get(graphPath, query)) as GraphResponse;
 
-    if (Array.isArray(resp.nodes)) nodes.push(...resp.nodes);
+    if (Array.isArray(resp.nodes)) {
+      for (const node of resp.nodes) {
+        // Cursor pages should be disjoint, but retaining the first occurrence
+        // keeps a bad overlapping response from affecting graph-derived scores.
+        if (seenNodeUuids.has(node.uuid)) continue;
+        seenNodeUuids.add(node.uuid);
+        nodes.push(node);
+      }
+    }
     // A legacy endpoint may omit next_cursor on its first response. Once it
     // has returned a later page, though, an omitted cursor leaves the graph
     // incomplete and must be surfaced to callers.
