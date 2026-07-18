@@ -25,19 +25,21 @@ class AbsorbItem:
     source_id: str
     title: str
     content: str
-    created_at: str
+    created_at: str | None
     updated_at: str
 
     def as_dict(self) -> dict[str, str]:
         """Return the API payload representation with its snake_case keys."""
-        return {
+        payload = {
             "store_kind": self.store_kind,
             "source_id": self.source_id,
             "title": self.title,
             "content": self.content,
-            "created_at": self.created_at,
             "updated_at": self.updated_at,
         }
+        if self.created_at is not None:
+            payload["created_at"] = self.created_at
+        return payload
 
 
 @dataclass(frozen=True)
@@ -97,6 +99,12 @@ def _iso_timestamp(timestamp: float) -> str:
     return datetime.fromtimestamp(timestamp, tz=UTC).isoformat().replace("+00:00", "Z")
 
 
+def _birthtime_iso(stat: object) -> str | None:
+    """Return a filesystem birthtime when the platform exposes one."""
+    birthtime = getattr(stat, "st_birthtime", None)
+    return _iso_timestamp(birthtime) if birthtime is not None else None
+
+
 def scan_directory(root: str | Path, store_kind: str) -> ScanResult:
     """Walk a local store and produce redacted items for a supported store kind."""
     root_path = Path(root)
@@ -126,7 +134,7 @@ def scan_directory(root: str | Path, store_kind: str) -> ScanResult:
                 source_id=source_id,
                 title=_derive_title(redaction.content, relative_path),
                 content=redaction.content,
-                created_at=_iso_timestamp(getattr(stat, "st_birthtime", stat.st_ctime)),
+                created_at=_birthtime_iso(stat),
                 updated_at=_iso_timestamp(stat.st_mtime),
             )
         )

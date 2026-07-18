@@ -6,7 +6,7 @@ from io import StringIO
 from pathlib import Path
 from typing import Any
 
-from hebbianvault_mcp.absorb import cli
+from hebbianvault_mcp.absorb import cli, importers
 from hebbianvault_mcp.absorb.importers import is_supported_store, scan_directory
 from hebbianvault_mcp.absorb.secrets import redact_secrets, should_skip_file
 from hebbianvault_mcp.config import HebbianConfig
@@ -64,12 +64,24 @@ class TestRedactSecrets:
             assert "[REDACTED]" in result.content
             assert result.redacted_count >= 1
 
-    def test_hbn_values_under_the_minimum_length_are_not_redacted(self) -> None:
+    def test_short_hebbian_prefixed_values_are_not_redacted(self) -> None:
         # Keep the fake hbn_ fixture below the production regex's 16-char minimum.
         secret = "hbn_" + "fakefixture1234"
         result = redact_secrets(f"token is {secret} ok")
         assert result.content == f"token is {secret} ok"
         assert result.redacted_count == 0
+
+    def test_redacts_tokens_adjacent_to_unicode_letters(self) -> None:
+        cases = [
+            fixture("sk-"),
+            fixture("hbn_"),
+            "deadbeef" * 5,
+        ]
+        for secret in cases:
+            for content in [f"é{secret}", f"{secret}é"]:
+                result = redact_secrets(content)
+                assert secret not in result.content
+                assert result.redacted_count > 0
 
     def test_keeps_bearer_word_but_redacts_value(self) -> None:
         result = redact_secrets("Authorization: Bearer abcdefghijklmnopqrstuvwxyz123456")
@@ -160,8 +172,18 @@ class TestImporters:
         item = result.items[0]
         assert item.title == "Memory index"
         assert item.store_kind == "markdown"
-        assert item.created_at.endswith("Z")
         assert item.updated_at.endswith("Z")
+
+    def test_scan_directory_omits_created_at_without_birthtime(
+        self, tmp_path: Path, monkeypatch: Any
+    ) -> None:
+        (tmp_path / "MEMORY.md").write_text("# Memory index\n")
+        monkeypatch.setattr(importers, "_birthtime_iso", lambda _stat: None)
+
+        result = scan_directory(tmp_path, "markdown")
+
+        assert result.items[0].created_at is None
+        assert "created_at" not in result.items[0].as_dict()
 
 
 async def test_absorb_batches_at_200_and_posts_existing_client_payload(
