@@ -143,6 +143,11 @@ async def start_serving_after_health_check(
 
 def main() -> None:
     """Entry point for `hebbian-mcp` CLI command."""
+    if len(sys.argv) > 1 and sys.argv[1] == "absorb":
+        from .absorb.cli import main as absorb_main
+
+        raise SystemExit(absorb_main(sys.argv[2:]))
+
     config = load_config()
     client = HebbianClient(
         api_url=config.api_url,
