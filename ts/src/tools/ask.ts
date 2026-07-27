@@ -33,8 +33,7 @@ export const HEBBIAN_ASK: Tool = {
         type: "string",
         description:
           "Natural language question to ask your Hebbian workspace. " +
-          "Be specific — the answer is grounded in source quotes, " +
-          "so precise questions yield more accurate citations.",
+          "Be specific. Precise questions retrieve more relevant notes.",
       },
     },
     required: ["question"],

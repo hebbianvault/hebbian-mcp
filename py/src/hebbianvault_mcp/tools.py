@@ -161,7 +161,13 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
         "inputSchema": {
             "type": "object",
             "properties": {
-                "question": {"type": "string", "description": "Natural language question."},
+                "question": {
+                    "type": "string",
+                    "description": (
+                        "Natural language question to ask your Hebbian workspace. "
+                        "Be specific. Precise questions retrieve more relevant notes."
+                    ),
+                },
             },
             "required": ["question"],
             "additionalProperties": False,
