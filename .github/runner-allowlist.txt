@@ -1,0 +1,4 @@
+# GitHub-hosted runner exceptions, one workflow:job:runner per line.
+.github/workflows/ci.yml:ts:ubuntu-latest
+.github/workflows/ci.yml:py:ubuntu-latest
+.github/workflows/release.yml:publish-pypi:ubuntu-latest
