@@ -1,0 +1,13 @@
+name: Unlisted quoted hosted-runner fixture
+
+on: workflow_dispatch
+
+jobs:
+  escaped-host:
+    runs-on: "ubuntu-24.04"
+    steps:
+      - run: true
+  flow-host:
+    runs-on: [ubuntu-latest]
+    steps:
+      - run: true

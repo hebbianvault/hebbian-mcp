@@ -22,5 +22,7 @@ jobs:
     timeout-minutes: 2
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Test hosted-runner detection forms
+        run: bash .github/scripts/test_runner_guard.sh
       - name: Reject unapproved GitHub-hosted runners
         run: bash .github/scripts/runner_guard.sh
