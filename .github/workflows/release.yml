@@ -8,9 +8,10 @@ on:
 jobs:
   publish-npm:
     name: Publish @hebbianvault/mcp to npm
-    # MUST be a GitHub-hosted runner: npm sigstore provenance rejects
-    # self-hosted (Blacksmith) runners with E422 "Unsupported GitHub Actions
-    # runner environment". Provenance requires github-hosted. (2026-07-16.)
+    # MUST be a GitHub-hosted runner: npm sigstore provenance + OIDC trusted
+    # publishing reject self-hosted (Blacksmith) runners with E422 (measured
+    # 2026-07-16, still current per npm docs 2026-07-31). Enforced by
+    # .github/runner-allowlist.txt — amend that file only with a gate ruling.
     runs-on: ubuntu-latest
     # Trusted publishing (OIDC): no NPM_TOKEN secret. One-time setup on
     # npmjs.com → package @hebbianvault/mcp → Settings → Trusted Publisher →

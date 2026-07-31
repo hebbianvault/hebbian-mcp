@@ -1,0 +1,26 @@
+name: Runner guard
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/**"
+      - ".github/runner-allowlist.txt"
+      - ".github/scripts/runner_guard.sh"
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/**"
+      - ".github/runner-allowlist.txt"
+      - ".github/scripts/runner_guard.sh"
+
+permissions:
+  contents: read
+
+jobs:
+  runner-guard:
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Reject unapproved GitHub-hosted runners
+        run: bash .github/scripts/runner_guard.sh
