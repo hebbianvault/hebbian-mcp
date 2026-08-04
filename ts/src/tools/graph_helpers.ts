@@ -252,7 +252,18 @@ export function queryTerms(q: string): string[] {
 
 /** A compact node summary for search/traverse result lists. */
 export function summarise(n: GraphNode): Record<string, unknown> {
-  const snippet = (n.summary ?? n.detail ?? "").toString().slice(0, 280);
+  // /vault/search intentionally omits body from its lightweight result shape;
+  // title is therefore the only reliable readable fallback when a note lacks a
+  // stored summary. `detail` remains for legacy graph responses.
+  const source = [n.summary, n.detail, n.title].find(
+    (value): value is string => typeof value === "string" && value.trim().length > 0,
+  ) ?? "";
+  const text = source.trim();
+  const head = text.slice(0, 281);
+  const boundary = Math.max(head.lastIndexOf("\n"), head.lastIndexOf(" "));
+  const snippet = text.length <= 280
+    ? text
+    : (boundary > 0 ? head.slice(0, boundary) : head.slice(0, 280)).trimEnd();
   return {
     uuid: n.uuid,
     title: n.title ?? null,

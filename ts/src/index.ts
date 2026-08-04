@@ -41,6 +41,7 @@ import { SERVER_NAME, SERVER_VERSION } from "./server_info.js";
 import { printBanner } from "./banner.js";
 import { runAbsorb } from "./absorb/cli.js";
 import { startServingAfterHealthCheck } from "./server_startup.js";
+import { frameUntrustedText } from "./tools/untrusted_content.js";
 import {
   HEBBIAN_READ_NODE, handleReadNode,
   HEBBIAN_SEARCH, handleSearch,
@@ -181,12 +182,12 @@ async function main(): Promise<void> {
       }
 
       return {
-        content: [{ type: "text", text: result }],
+        content: [{ type: "text", text: frameUntrustedText(result) }],
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       return {
-        content: [{ type: "text", text: `Error: ${message}` }],
+        content: [{ type: "text", text: frameUntrustedText(`Error: ${message}`) }],
         isError: true,
       };
     }
