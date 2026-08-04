@@ -1,0 +1,2 @@
+# GitHub-hosted runner exceptions, one workflow:job:runner per line.
+.github/workflows/release.yml:publish-npm:ubuntu-latest
