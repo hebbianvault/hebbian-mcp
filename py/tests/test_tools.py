@@ -853,6 +853,194 @@ class TestCapture:
 # ── hebbian_traverse (graph-derived BFS) ───────────────────────────────────────
 
 class TestTraverse:
+    @staticmethod
+    def _node(
+        uuid: str,
+        title: str | None = None,
+        *,
+        summary: str = "",
+        tags: list[str] | None = None,
+        edges: list[dict[str, Any]] | None = None,
+    ) -> dict[str, Any]:
+        return {
+            "uuid": uuid,
+            "title": title or uuid,
+            "summary": summary,
+            "tags": tags or [],
+            "edges": edges or [],
+        }
+
+    @staticmethod
+    def _star(
+        count: int, *, summary: str = "", weights: list[float] | None = None) -> dict[str, Any]:
+        weights = weights or [1.0] * count
+        return {
+            "nodes": [
+                TestTraverse._node(
+                    "start",
+                    edges=[{"to": f"n{index}", "weight": weights[index]} for index in range(count)],
+                ),
+                *[
+                    TestTraverse._node(f"n{index}", summary=summary)
+                    for index in range(count)
+                ],
+            ]
+        }
+
+    @pytest.mark.asyncio
+    async def test_neighbourhood_char_bound_binds_before_node_count(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("hebbianvault_mcp.tools.NEIGHBOURHOOD_MAX_CHARS", 1_000)
+        graph = self._star(60)
+        for index, node in enumerate(graph["nodes"][1:]):
+            node["title"] = f"{'x' * 740}{index}"
+        out = json.loads(await handle_traverse(mock_client(get_return=graph), {"start_uuid": "start"}))
+
+        assert out["bound_hit"] == "chars"
+        assert 1 <= out["node_count"] < 50
+
+    @pytest.mark.asyncio
+    async def test_neighbourhood_node_bound_is_reachable(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("hebbianvault_mcp.tools.NEIGHBOURHOOD_MAX_CHARS", 100_000)
+        graph = self._star(60, summary="x" * 50)
+        out = json.loads(await handle_traverse(mock_client(get_return=graph), {"start_uuid": "start"}))
+
+        assert out["bound_hit"] == "nodes"
+        assert out["node_count"] == 50
+
+    @pytest.mark.asyncio
+    async def test_neighbourhood_clamps_depth_without_changing_public_schema(self) -> None:
+        nodes = [self._node("n0", edges=[{"to": "n1", "weight": 1.0}])]
+        nodes.extend(
+            self._node(
+                f"n{depth}",
+                edges=[{"to": f"n{depth + 1}", "weight": 1.0}] if depth < 6 else [],
+            )
+            for depth in range(1, 7)
+        )
+        out = json.loads(
+            await handle_traverse(mock_client(get_return={"nodes": nodes}), {"start_uuid": "n0", "max_hops": 5})
+        )
+        schema = next(schema for schema in TOOL_SCHEMAS if schema["name"] == "hebbian_traverse")
+
+        assert {node["uuid"] for node in out["nodes"]} == {"n0", "n1", "n2", "n3"}
+        assert out["bound_hit"] == "depth"
+        assert schema["inputSchema"]["properties"]["max_hops"]["maximum"] == 5
+
+    @pytest.mark.asyncio
+    async def test_neighbourhood_deduplicates_twins_by_preference(self) -> None:
+        graph = {
+            "nodes": [
+                self._node(
+                    "start",
+                    edges=[
+                        {"to": "11111111-1111-4000-8000-000000000001", "weight": 1.0},
+                        {"to": "22222222-2222-5000-8000-000000000002", "weight": 1.0},
+                        {"to": "33333333-3333-4000-8000-000000000003", "weight": 1.0},
+                        {"to": "44444444-4444-4000-8000-000000000004", "weight": 1.0},
+                    ],
+                ),
+                self._node("11111111-1111-4000-8000-000000000001", "Versioned twin"),
+                self._node("22222222-2222-5000-8000-000000000002", "Versioned twin", tags=["kept"]),
+                self._node("33333333-3333-4000-8000-000000000003", "Plain twin"),
+                self._node("44444444-4444-4000-8000-000000000004", "Plain twin"),
+            ]
+        }
+        out = json.loads(await handle_traverse(mock_client(get_return=graph), {"start_uuid": "start"}))
+
+        assert {node["uuid"] for node in out["nodes"]} == {
+            "start",
+            "22222222-2222-5000-8000-000000000002",
+            "33333333-3333-4000-8000-000000000003",
+        }
+        assert out["duplicates_dropped"] == 2
+
+    @pytest.mark.asyncio
+    async def test_neighbourhood_truncation_markers_and_complete_walk(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr("hebbianvault_mcp.tools.NEIGHBOURHOOD_MAX_NODES", 3)
+        truncated = json.loads(
+            await handle_traverse(mock_client(get_return=self._star(60, summary="x" * 50)), {"start_uuid": "start"})
+        )
+        complete = json.loads(
+            await handle_traverse(mock_client(get_return=self._star(2)), {"start_uuid": "start"})
+        )
+
+        assert truncated["truncated_at_hop"] == 1
+        assert truncated["nodes_dropped"] > 0
+        assert truncated["bound_hit"] == "nodes"
+        assert complete["truncated_at_hop"] is None
+        assert complete["bound_hit"] is None
+
+    @pytest.mark.asyncio
+    async def test_neighbourhood_marks_snippets_withheld_by_depth_policy(self) -> None:
+        """A withheld snippet is distinguishable from a node that has none.
+
+        `_neighbourhood_summary` drops `snippet` past depth 1. Without a marker a
+        consumer at hop 2 cannot tell "this node has no snippet" from "the snippet
+        was withheld by policy", so the absence reads as data.
+        """
+        graph = {
+            "nodes": [
+                self._node("n0", summary="root text", edges=[{"to": "n1", "weight": 1.0}]),
+                self._node("n1", summary="hop one text", edges=[{"to": "n2", "weight": 1.0}]),
+                self._node("n2", summary="hop two text", edges=[{"to": "n3", "weight": 1.0}]),
+                self._node("n3", summary="", edges=[]),
+            ]
+        }
+        out = json.loads(
+            await handle_traverse(mock_client(get_return=graph), {"start_uuid": "n0", "max_hops": 3})
+        )
+        by_uuid = {node["uuid"]: node for node in out["nodes"]}
+
+        # Depth 0 and 1 keep the snippet and are not marked. The value carries the
+        # per-field untrusted framing, so match on the payload text inside it.
+        assert "root text" in by_uuid["n0"]["snippet"]
+        assert "snippet_withheld" not in by_uuid["n0"]
+        assert "hop one text" in by_uuid["n1"]["snippet"]
+        assert "snippet_withheld" not in by_uuid["n1"]
+
+        # Depth 2 HAD a snippet and it was withheld: say so, do not just omit it.
+        assert "snippet" not in by_uuid["n2"]
+        assert by_uuid["n2"]["snippet_withheld"] == "depth_policy"
+
+        # Depth 3 genuinely has no snippet: absence is the truth, no false marker.
+        assert "snippet" not in by_uuid["n3"]
+        assert "snippet_withheld" not in by_uuid["n3"]
+
+    @pytest.mark.asyncio
+    async def test_neighbourhood_isolated_node_returns_empty_result(self) -> None:
+        out = json.loads(
+            await handle_traverse(
+                mock_client(get_return={"nodes": [self._node("isolated")]}),
+                {"start_uuid": "isolated"},
+            )
+        )
+
+        assert [node["uuid"] for node in out["nodes"]] == ["isolated"]
+        assert out["bound_hit"] is None
+
+    @pytest.mark.asyncio
+    async def test_neighbourhood_ranks_frontier_and_drops_weakest(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr("hebbianvault_mcp.tools.NEIGHBOURHOOD_MAX_NODES", 2)
+        graph = self._star(4, weights=[0.1, 0.9, 0.8, 0.2])
+        out = json.loads(await handle_traverse(mock_client(get_return=graph), {"start_uuid": "start"}))
+
+        assert [node["uuid"] for node in out["nodes"]] == ["start", "n1"]
+
+    @pytest.mark.asyncio
+    async def test_neighbourhood_reports_degenerate_edge_weights(self) -> None:
+        out = json.loads(
+            await handle_traverse(mock_client(get_return=self._star(3, weights=[0.5, 0.5, 0.5])), {"start_uuid": "start"})
+        )
+
+        assert out["weight_spread"] == 0.0
+        assert out["distinct_weights"] == 1
+
     @pytest.mark.asyncio
     async def test_walks_to_edge_shape(self) -> None:
         client = mock_client(get_return=_graph())
