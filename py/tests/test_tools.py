@@ -977,6 +977,42 @@ class TestTraverse:
         assert complete["bound_hit"] is None
 
     @pytest.mark.asyncio
+    async def test_neighbourhood_marks_snippets_withheld_by_depth_policy(self) -> None:
+        """A withheld snippet is distinguishable from a node that has none.
+
+        `_neighbourhood_summary` drops `snippet` past depth 1. Without a marker a
+        consumer at hop 2 cannot tell "this node has no snippet" from "the snippet
+        was withheld by policy", so the absence reads as data.
+        """
+        graph = {
+            "nodes": [
+                self._node("n0", summary="root text", edges=[{"to": "n1", "weight": 1.0}]),
+                self._node("n1", summary="hop one text", edges=[{"to": "n2", "weight": 1.0}]),
+                self._node("n2", summary="hop two text", edges=[{"to": "n3", "weight": 1.0}]),
+                self._node("n3", summary="", edges=[]),
+            ]
+        }
+        out = json.loads(
+            await handle_traverse(mock_client(get_return=graph), {"start_uuid": "n0", "max_hops": 3})
+        )
+        by_uuid = {node["uuid"]: node for node in out["nodes"]}
+
+        # Depth 0 and 1 keep the snippet and are not marked. The value carries the
+        # per-field untrusted framing, so match on the payload text inside it.
+        assert "root text" in by_uuid["n0"]["snippet"]
+        assert "snippet_withheld" not in by_uuid["n0"]
+        assert "hop one text" in by_uuid["n1"]["snippet"]
+        assert "snippet_withheld" not in by_uuid["n1"]
+
+        # Depth 2 HAD a snippet and it was withheld: say so, do not just omit it.
+        assert "snippet" not in by_uuid["n2"]
+        assert by_uuid["n2"]["snippet_withheld"] == "depth_policy"
+
+        # Depth 3 genuinely has no snippet: absence is the truth, no false marker.
+        assert "snippet" not in by_uuid["n3"]
+        assert "snippet_withheld" not in by_uuid["n3"]
+
+    @pytest.mark.asyncio
     async def test_neighbourhood_isolated_node_returns_empty_result(self) -> None:
         out = json.loads(
             await handle_traverse(

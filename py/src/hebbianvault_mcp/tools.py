@@ -729,7 +729,12 @@ def _neighbourhood_summary(node: dict[str, Any], depth: int) -> dict[str, Any]:
         if not summary[key]:
             summary.pop(key)
     if depth > 1:
-        summary.pop("snippet", None)
+        # Report the withholding rather than leaving a silent gap: an absent
+        # `snippet` would otherwise be indistinguishable from a node that has
+        # none, and a consumer would read a policy decision as data. Mark it
+        # only when a snippet was actually dropped.
+        if summary.pop("snippet", None):
+            summary["snippet_withheld"] = "depth_policy"
     return summary
 
 
