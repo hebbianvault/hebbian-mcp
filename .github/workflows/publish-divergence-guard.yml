@@ -1,0 +1,66 @@
+name: Publish divergence guard
+
+on:
+  pull_request:
+    branches: [main, dev]
+    paths:
+      - "ts/package.json"
+      - "ts/package-lock.json"
+      - "py/pyproject.toml"
+      - "py/uv.lock"
+      - ".github/scripts/publish_divergence_guard.py"
+      - ".github/scripts/test_publish_divergence_guard.sh"
+      - ".github/workflows/publish-divergence-guard.yml"
+      - ".github/workflows/release.yml"
+  push:
+    branches: [main, dev]
+    paths:
+      - "ts/package.json"
+      - "ts/package-lock.json"
+      - "py/pyproject.toml"
+      - "py/uv.lock"
+      - ".github/scripts/publish_divergence_guard.py"
+      - ".github/scripts/test_publish_divergence_guard.sh"
+      - ".github/workflows/publish-divergence-guard.yml"
+      - ".github/workflows/release.yml"
+  workflow_call:
+    inputs:
+      tag:
+        description: Release tag expected to match every package metadata file.
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  guard:
+    name: Check publish metadata
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Reject divergent package metadata
+        run: |
+          set -euo pipefail
+          if [ -n "${{ inputs.tag }}" ]; then
+            python3 .github/scripts/publish_divergence_guard.py --tag "${{ inputs.tag }}"
+          else
+            python3 .github/scripts/publish_divergence_guard.py
+          fi
+
+  verify-guard-arms:
+    name: Verify every guard arm
+    if: ${{ github.event_name != 'workflow_call' }}
+    runs-on: blacksmith-4vcpu-ubuntu-2404
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Differentially verify every guard arm
+        run: bash .github/scripts/test_publish_divergence_guard.sh

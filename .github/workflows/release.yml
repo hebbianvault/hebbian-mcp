@@ -4,10 +4,18 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
 
 jobs:
+  verify-publish-source:
+    name: Verify publish source
+    uses: ./.github/workflows/publish-divergence-guard.yml
+    with:
+      tag: ${{ github.ref_name }}
+
   publish-npm:
     name: Publish @hebbianvault/mcp to npm
+    needs: verify-publish-source
     # MUST be a GitHub-hosted runner: npm sigstore provenance + OIDC trusted
     # publishing reject self-hosted (Blacksmith) runners with E422 (measured
     # 2026-07-16, still current per npm docs 2026-07-31). Enforced by
@@ -49,6 +57,7 @@ jobs:
 
   publish-pypi:
     name: Publish hebbianvault-mcp to PyPI
+    needs: verify-publish-source
     runs-on: blacksmith-4vcpu-ubuntu-2404
     # Trusted publishing (OIDC): no PYPI_API_TOKEN secret. One-time setup on
     # pypi.org → project hebbianvault-mcp → Publishing → add GitHub publisher:
