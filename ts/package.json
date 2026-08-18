@@ -1,6 +1,6 @@
 {
   "name": "@hebbianvault/mcp",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "description": "Customer-installable MCP server for the Hebbian tenant brain. One package, scope-by-token (Employee or Company). Install in Claude Code, Claude Desktop, Cursor, Cowork, or any MCP-compatible agent.",
   "type": "module",
   "main": "dist/index.js",
