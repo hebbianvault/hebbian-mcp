@@ -976,6 +976,207 @@ describe("hebbian_capture", () => {
 // ── hebbian_traverse (graph-derived BFS) ───────────────────────────────────────
 
 describe("hebbian_traverse", () => {
+  test("omits empty tags and retains populated tags in neighbourhood summaries", async () => {
+    const fixture = {
+      nodes: [
+        { uuid: "root", title: "Root", tags: [], edges: [{ to: "tagged" }] },
+        { uuid: "tagged", title: "Tagged", tags: ["important"], edges: [] },
+      ],
+    };
+
+    const out = JSON.parse(await handleTraverse(
+      mockClient({ get: jest.fn().mockResolvedValue(fixture) }),
+      { start_uuid: "root", max_hops: 1 },
+    ));
+    const byUuid = new Map(out.nodes.map((node: { uuid: string }) => [node.uuid, node]));
+
+    expect(byUuid.get("root")).not.toHaveProperty("tags");
+    expect(byUuid.get("tagged")).toMatchObject({ tags: ["important"] });
+  });
+
+  test("skips malformed edges before counting valid edges", async () => {
+    const fixture = {
+      nodes: [
+        { uuid: "root", title: "Root", edges: [null, "bad", 1, { to: "valid", weight: 1 }] },
+        { uuid: "valid", title: "Valid", edges: [] },
+      ],
+    };
+
+    const out = JSON.parse(await handleTraverse(
+      mockClient({ get: jest.fn().mockResolvedValue(fixture) }),
+      { start_uuid: "root", max_hops: 1 },
+    ));
+
+    expect(out.nodes.map((node: { uuid: string }) => node.uuid)).toEqual(["root", "valid"]);
+    expect(out.edges_considered).toBe(1);
+  });
+
+  test("bounds dense neighbourhood responses within the framed payload budget", async () => {
+    const denseGraph = {
+      nodes: [
+        {
+          uuid: "root",
+          title: "Root",
+          summary: "Root summary",
+          edges: Array.from({ length: 80 }, (_, index) => ({
+            to: `node-${index}`,
+            relation_type: "related_to",
+            weight: 1,
+          })),
+        },
+        ...Array.from({ length: 80 }, (_, index) => ({
+          uuid: `node-${index}`,
+          title: `Node ${index}`,
+          summary: "x".repeat(1_000),
+          edges: [],
+        })),
+      ],
+    };
+
+    const output = await handleTraverse(
+      mockClient({ get: jest.fn().mockResolvedValue(denseGraph) }),
+      { start_uuid: "root", max_hops: 1 },
+    );
+    const out = JSON.parse(output);
+
+    expect(out.node_count).toBeLessThanOrEqual(50);
+    expect(frameUntrustedText(output).length).toBeLessThanOrEqual(15_000);
+    expect(out.bound_hit).toBeTruthy();
+    expect(out.truncated_at_hop).not.toBeNull();
+  });
+
+  test("deduplicates title twins, rewrites aliases, and keeps untitled nodes distinct", async () => {
+    const v4Twin = "11111111-1111-4111-8111-111111111111";
+    const v5Twin = "22222222-2222-5222-8222-222222222222";
+    const untaggedTwin = "33333333-3333-4333-8333-333333333333";
+    const taggedTwin = "44444444-4444-4444-8444-444444444444";
+    const fixture = {
+      nodes: [
+        {
+          uuid: "root",
+          title: "Root",
+          edges: [
+            { to: v4Twin, relation_type: "links", weight: 1 },
+            { to: untaggedTwin, relation_type: "links", weight: 1 },
+            { to: "untitled-one", relation_type: "links", weight: 1 },
+            { to: "untitled-two", relation_type: "links", weight: 1 },
+          ],
+        },
+        { uuid: v4Twin, title: "Same title", tags: ["legacy"], edges: [] },
+        { uuid: v5Twin, title: "Same title", tags: [], edges: [] },
+        { uuid: untaggedTwin, title: "Tag ranking", tags: [], edges: [] },
+        { uuid: taggedTwin, title: "Tag ranking", tags: ["winner"], edges: [] },
+        { uuid: "untitled-one", edges: [] },
+        { uuid: "untitled-two", edges: [] },
+      ],
+    };
+
+    const out = JSON.parse(await handleTraverse(
+      mockClient({ get: jest.fn().mockResolvedValue(fixture) }),
+      { start_uuid: "root", max_hops: 1 },
+    ));
+
+    expect(out.duplicates_dropped).toBe(2);
+    expect(out.nodes.map((node: { uuid: string }) => node.uuid)).toEqual([
+      "root", v5Twin, taggedTwin, "untitled-one", "untitled-two",
+    ]);
+    expect(out.edges[0]).toMatchObject({ source_uuid: "root", target_uuid: v5Twin });
+    expect(out.edges[1]).toMatchObject({ source_uuid: "root", target_uuid: taggedTwin });
+  });
+
+  test("withholds snippets only at depth two and beyond", async () => {
+    const fixture = {
+      nodes: [
+        { uuid: "root", title: "Root", summary: "root snippet", edges: [{ to: "one" }] },
+        {
+          uuid: "one",
+          title: "One",
+          summary: "one snippet",
+          edges: [{ to: "two" }, { to: "no-snippet" }],
+        },
+        { uuid: "two", title: "Two", summary: "two snippet", edges: [] },
+        { uuid: "no-snippet", edges: [] },
+      ],
+    };
+
+    const out = JSON.parse(await handleTraverse(
+      mockClient({ get: jest.fn().mockResolvedValue(fixture) }),
+      { start_uuid: "root", max_hops: 2 },
+    ));
+    const byUuid = new Map(out.nodes.map((node: { uuid: string }) => [node.uuid, node]));
+
+    expect(byUuid.get("root").snippet).toBe("root snippet");
+    expect(byUuid.get("one").snippet).toBe("one snippet");
+    expect(byUuid.get("two")).toMatchObject({ snippet_withheld: "depth_policy" });
+    expect(byUuid.get("two").snippet).toBeUndefined();
+    expect(byUuid.get("no-snippet").snippet).toBeUndefined();
+    expect(byUuid.get("no-snippet").snippet_withheld).toBeUndefined();
+  });
+
+  test("retains highest-weight neighbours when the node bound binds", async () => {
+    const fixture = {
+      nodes: [
+        {
+          uuid: "root",
+          title: "Root",
+          edges: Array.from({ length: 60 }, (_, index) => ({
+            to: `rank-${index}`,
+            relation_type: "links",
+            weight: 60 - index,
+          })),
+        },
+        ...Array.from({ length: 60 }, (_, index) => ({
+          uuid: `rank-${index}`,
+          title: `Rank ${index}`,
+          edges: [],
+        })),
+      ],
+    };
+
+    const out = JSON.parse(await handleTraverse(
+      mockClient({ get: jest.fn().mockResolvedValue(fixture) }),
+      { start_uuid: "root", max_hops: 1 },
+    ));
+    const uuids = out.nodes.map((node: { uuid: string }) => node.uuid);
+
+    expect(out.bound_hit).toBe("nodes");
+    expect(out.node_count).toBe(50);
+    expect(uuids).toContain("rank-0");
+    expect(uuids).toContain("rank-48");
+    expect(uuids).not.toContain("rank-49");
+    expect(uuids).not.toContain("rank-59");
+  });
+
+  test("coerces hostile edge weights to zero without throwing", async () => {
+    const fixture = {
+      nodes: [
+        {
+          uuid: "root",
+          title: "Root",
+          edges: [
+            { to: "string", weight: "not-a-number" },
+            { to: "null", weight: null },
+            { to: "nan", weight: Number.NaN },
+            { to: "infinity", weight: Number.POSITIVE_INFINITY },
+          ],
+        },
+        { uuid: "string", title: "String", edges: [] },
+        { uuid: "null", title: "Null", edges: [] },
+        { uuid: "nan", title: "NaN", edges: [] },
+        { uuid: "infinity", title: "Infinity", edges: [] },
+      ],
+    };
+
+    const out = JSON.parse(await handleTraverse(
+      mockClient({ get: jest.fn().mockResolvedValue(fixture) }),
+      { start_uuid: "root", max_hops: 1 },
+    ));
+
+    expect(out.node_count).toBe(5);
+    expect(out.distinct_weights).toBe(1);
+    expect(out.weight_spread).toBeNull();
+  });
+
   // Product ruling 2026-08-18 (traverse payload cliff): the published contract
   // capped max_hops at 5 while our own measurement showed 0/50 useful answers at
   // depth 4-6 and ~414-491k chars already at hop 3, with no node budget beneath it.
@@ -1005,14 +1206,20 @@ describe("hebbian_traverse", () => {
       "c2",
       "c3",
     ]);
+    expect(out.bound_hit).toBe("depth");
+    expect(out.truncated_at_hop).toBe(3);
   });
 
-  test("max_hops description warns about response size, not relevance", () => {
+  test("max_hops description explains bounds and truncation diagnostics", () => {
     const schema = HEBBIAN_TRAVERSE.inputSchema as {
       properties: { max_hops: { description: string } };
     };
     expect(schema.properties.max_hops.description).toMatch(/size of the response/i);
     expect(schema.properties.max_hops.description).not.toMatch(/loosely-related/i);
+    expect(schema.properties.max_hops.description).toMatch(/bounded/i);
+    expect(schema.properties.max_hops.description).toMatch(/truncated_at_hop/i);
+    expect(schema.properties.max_hops.description).toMatch(/bound_hit/i);
+    expect(schema.properties.max_hops.description).toMatch(/nodes_dropped/i);
   });
 
   test("walks edges from the start node (handles { to } edge shape)", async () => {
@@ -1034,6 +1241,15 @@ describe("hebbian_traverse", () => {
     const out = JSON.parse(await handleTraverse(client, { start_uuid: "missing" }));
     expect(out.nodes).toEqual([]);
     expect(out.message).toMatch(/not found/i);
+    expect(out).toMatchObject({
+      truncated_at_hop: null,
+      nodes_dropped: 0,
+      duplicates_dropped: 0,
+      bound_hit: null,
+      weight_spread: null,
+      distinct_weights: 0,
+      edges_considered: 0,
+    });
   });
 
   test("throws on missing start_uuid", async () => {
