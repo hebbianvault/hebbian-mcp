@@ -16,7 +16,7 @@ import { HebbianApiError } from "../client.js";
 import { fetchGraph, normaliseEdge, summarise, type GraphNode } from "./graph_helpers.js";
 import { stringifyUntrustedResult } from "./untrusted_content.js";
 
-const MAX_HOPS = 5;
+const MAX_HOPS = 3;
 const DEFAULT_HOPS = 2;
 
 export const HEBBIAN_TRAVERSE: Tool = {
@@ -40,7 +40,9 @@ export const HEBBIAN_TRAVERSE: Tool = {
         type: "number",
         description:
           `Maximum number of hops to traverse. Default: ${DEFAULT_HOPS}. Max: ${MAX_HOPS}. ` +
-          "Higher values return more context but may include loosely-related nodes.",
+          "Each extra hop multiplies the size of the response, not its relevance. On a " +
+          "dense workspace a 3-hop walk already returns hundreds of thousands of " +
+          "characters. Start at 1 or 2 and widen only if the answer is genuinely missing.",
         minimum: 1,
         maximum: MAX_HOPS,
       },

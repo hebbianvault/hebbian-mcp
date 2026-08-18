@@ -25,7 +25,7 @@ from .client import HebbianApiError, HebbianClient
 
 logger = logging.getLogger(__name__)
 
-MAX_HOPS = 5
+MAX_HOPS = 3
 DEFAULT_HOPS = 2
 # neighbourhood_v0 response budgets. PROVISIONAL — not yet ratified by any lane (graph
 # lane proposed them but then retracted that gate; api-mcp demoted node bound to a
@@ -331,7 +331,10 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
                 "max_hops": {
                     "type": "number",
                     "description": (
-                        f"Max hops to traverse. Default: {DEFAULT_HOPS}. Max: {MAX_HOPS}."
+                        f"Max hops to traverse. Default: {DEFAULT_HOPS}. Max: {MAX_HOPS}. "
+                        "Each extra hop multiplies the size of the response, not its "
+                        "relevance. Start at 1 or 2 and widen only if the answer is "
+                        "genuinely missing."
                     ),
                     "minimum": 1,
                     "maximum": MAX_HOPS,
@@ -867,7 +870,12 @@ async def handle_capture(client: HebbianClient, args: dict[str, Any]) -> str:
 async def handle_traverse(client: HebbianClient, args: dict[str, Any]) -> str:
     """Return a bounded, weight-ranked neighbourhood from the scoped graph."""
     start = _require_str(args, "start_uuid")
-    hops = min(max(1, int(args.get("max_hops", DEFAULT_HOPS))), MAX_HOPS)
+    # Keep the caller's ask separate from the effective walk. MAX_HOPS dropped from 5
+    # to 3 (product ruling 2026-08-18), and a caller that bypasses schema validation and
+    # still sends 4 or 5 must be told its request was truncated rather than silently
+    # handed a shorter answer.
+    requested_hops = max(1, int(args.get("max_hops", DEFAULT_HOPS)))
+    hops = min(requested_hops, MAX_HOPS)
 
     try:
         nodes, truncated = await _fetch_graph(client)
@@ -985,9 +993,9 @@ async def handle_traverse(client: HebbianClient, args: dict[str, Any]) -> str:
             )
         ]
 
-    # Public max_hops stays unchanged. The neighbourhood's internal depth is a
-    # separate safety cap that can report when it truncated a deeper request.
-    for depth in range(1, hops + 1):
+    # Walk the caller's requested depth so the internal cap can report when it
+    # truncated a deeper request; NEIGHBOURHOOD_MAX_DEPTH still bounds what is returned.
+    for depth in range(1, requested_hops + 1):
         candidates = expand_frontier(frontier)
         if depth > NEIGHBOURHOOD_MAX_DEPTH:
             if candidates:
