@@ -912,7 +912,7 @@ class TestTraverse:
         assert out["node_count"] == 50
 
     @pytest.mark.asyncio
-    async def test_neighbourhood_clamps_depth_without_changing_public_schema(self) -> None:
+    async def test_neighbourhood_clamps_depth_and_publishes_a_ceiling_of_three(self) -> None:
         nodes = [self._node("n0", edges=[{"to": "n1", "weight": 1.0}])]
         nodes.extend(
             self._node(
@@ -928,7 +928,13 @@ class TestTraverse:
 
         assert {node["uuid"] for node in out["nodes"]} == {"n0", "n1", "n2", "n3"}
         assert out["bound_hit"] == "depth"
-        assert schema["inputSchema"]["properties"]["max_hops"]["maximum"] == 5
+        # Product ruling 2026-08-18 (traverse payload cliff): the published ceiling was 5
+        # while our own measurement showed 0/50 useful answers at depth 4-6. RED at 5.
+        assert schema["inputSchema"]["properties"]["max_hops"]["maximum"] == 3
+        assert schema["inputSchema"]["properties"]["max_hops"]["minimum"] == 1
+        assert out["max_hops"] == 3
+        description = schema["inputSchema"]["properties"]["max_hops"]["description"]
+        assert "size of the response" in description
 
     @pytest.mark.asyncio
     async def test_neighbourhood_deduplicates_twins_by_preference(self) -> None:

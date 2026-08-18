@@ -976,6 +976,45 @@ describe("hebbian_capture", () => {
 // ── hebbian_traverse (graph-derived BFS) ───────────────────────────────────────
 
 describe("hebbian_traverse", () => {
+  // Product ruling 2026-08-18 (traverse payload cliff): the published contract
+  // capped max_hops at 5 while our own measurement showed 0/50 useful answers at
+  // depth 4-6 and ~414-491k chars already at hop 3, with no node budget beneath it.
+  // Both assertions below are RED at MAX_HOPS = 5.
+  test("publishes a max_hops ceiling of 3 and clamps deeper requests", async () => {
+    const chain = {
+      nodes: Array.from({ length: 7 }, (_, i) => ({
+        uuid: `c${i}`,
+        title: `node ${i}`,
+        edges: i < 6 ? [{ to: `c${i + 1}`, relation_type: "relates_to", weight: 1 }] : [],
+      })),
+    };
+    const client = mockClient({ get: jest.fn().mockResolvedValue(chain) });
+
+    const schema = HEBBIAN_TRAVERSE.inputSchema as {
+      properties: { max_hops: { minimum: number; maximum: number; description: string } };
+    };
+    expect(schema.properties.max_hops.maximum).toBe(3);
+    expect(schema.properties.max_hops.minimum).toBe(1);
+
+    // A caller who still passes the old ceiling is clamped, not walked to depth 5.
+    const out = JSON.parse(await handleTraverse(client, { start_uuid: "c0", max_hops: 5 }));
+    expect(out.max_hops).toBe(3);
+    expect(out.nodes.map((n: { uuid: string }) => n.uuid).sort()).toEqual([
+      "c0",
+      "c1",
+      "c2",
+      "c3",
+    ]);
+  });
+
+  test("max_hops description warns about response size, not relevance", () => {
+    const schema = HEBBIAN_TRAVERSE.inputSchema as {
+      properties: { max_hops: { description: string } };
+    };
+    expect(schema.properties.max_hops.description).toMatch(/size of the response/i);
+    expect(schema.properties.max_hops.description).not.toMatch(/loosely-related/i);
+  });
+
   test("walks edges from the start node (handles { to } edge shape)", async () => {
     const get = jest.fn().mockResolvedValue(graph());
     const client = mockClient({ get });
