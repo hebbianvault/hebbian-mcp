@@ -110,3 +110,58 @@ make_fixture
 expect_failure "tag-package divergence" "does not match package version" "$guard" --root "$fixture/repo" --tag "v${different_version}"
 
 echo "All publish-divergence guard arms were verified."
+
+# ── Arm: a hostile tag name must not reach the guard step's shell ─────────────
+# github.ref_name is a git tag name, and git allows ; $ ` and " in one. Until
+# 2026-08-18 the guard step pasted it in through ${{ inputs.tag }}, so a tag
+# pushed by anyone with write access ran as shell in a job that goes on to
+# publish. Both arms below are executed, so the RED one proves the hazard was
+# real and the GREEN one proves this file's current shape closes it.
+make_fixture
+marker="$fixture/injected"
+hostile_tag='v0.0.1"; touch '"$marker"'; :"'
+
+rm -f "$marker"
+# Unquoted heredoc on purpose: it substitutes the tag textually, which is what
+# ${{ }} does before the shell ever sees the script.
+cat >"$fixture/step-interpolated.sh" <<EOF
+set -euo pipefail
+if [ -n "$hostile_tag" ]; then
+  python3 "$guard" --root "$fixture/repo" --tag "$hostile_tag"
+else
+  python3 "$guard" --root "$fixture/repo"
+fi
+EOF
+bash "$fixture/step-interpolated.sh" >/dev/null 2>&1 || true
+if [[ ! -f "$marker" ]]; then
+  echo "RED arm did not reproduce the tag injection; this drill would pass vacuously." >&2
+  exit 1
+fi
+
+rm -f "$marker"
+cat >"$fixture/step-env.sh" <<'EOF'
+set -euo pipefail
+if [ -n "${TAG:-}" ]; then
+  python3 "$GUARD" --root "$ROOT" --tag "$TAG"
+else
+  python3 "$GUARD" --root "$ROOT"
+fi
+EOF
+TAG="$hostile_tag" GUARD="$guard" ROOT="$fixture/repo" bash "$fixture/step-env.sh" >/dev/null 2>&1 || true
+if [[ -f "$marker" ]]; then
+  echo "GREEN arm executed the injected command; the env-var form is not closing it." >&2
+  exit 1
+fi
+
+# The arms above test a shape. This asserts the workflow still has that shape.
+workflow="$repo_root/.github/workflows/publish-divergence-guard.yml"
+if grep -nE '^\s*(python3|if).*\$\{\{\s*inputs\.tag' "$workflow" >/dev/null; then
+  echo "publish-divergence-guard.yml interpolates inputs.tag into a run block again." >&2
+  exit 1
+fi
+if ! grep -qE '^\s*TAG:\s*\$\{\{\s*inputs\.tag\s*\}\}\s*$' "$workflow"; then
+  echo "publish-divergence-guard.yml no longer passes the tag through the TAG env var." >&2
+  exit 1
+fi
+
+echo "Tag-injection arms verified: interpolated form executes, env form does not."
