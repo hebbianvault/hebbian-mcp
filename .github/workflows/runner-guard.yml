@@ -18,7 +18,7 @@ permissions:
 
 jobs:
   runner-guard:
-    runs-on: depot-ubuntu-24.04-4
+    runs-on: ${{ vars.CI_RUNNER_4CPU || 'depot-ubuntu-24.04-4' }}
     timeout-minutes: 2
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2

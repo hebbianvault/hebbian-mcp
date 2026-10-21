@@ -36,7 +36,7 @@ permissions:
 jobs:
   guard:
     name: Check publish metadata
-    runs-on: depot-ubuntu-24.04-4
+    runs-on: ${{ vars.CI_RUNNER_4CPU || 'depot-ubuntu-24.04-4' }}
     timeout-minutes: 2
     steps:
       - uses: actions/checkout@v4
@@ -61,7 +61,7 @@ jobs:
   verify-guard-arms:
     name: Verify every guard arm
     if: ${{ github.event_name != 'workflow_call' }}
-    runs-on: depot-ubuntu-24.04-4
+    runs-on: ${{ vars.CI_RUNNER_4CPU || 'depot-ubuntu-24.04-4' }}
     timeout-minutes: 2
     steps:
       - uses: actions/checkout@v4
