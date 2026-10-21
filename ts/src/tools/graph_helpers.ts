@@ -52,6 +52,7 @@ export interface GraphNode {
   title?: string;
   summary?: string;
   detail?: string;
+  excerpt?: string;
   domain?: string;
   archetype?: string;
   actor?: string;
@@ -214,48 +215,12 @@ async function fetchGraphUncached(client: HebbianClient): Promise<GraphFetchResu
   return { nodes, truncated: false };
 }
 
-/** Lower-cased haystack of a node's searchable text fields. */
-function nodeHaystack(n: GraphNode): string {
-  const parts = [
-    n.title,
-    n.summary,
-    n.detail,
-    n.domain,
-    n.archetype,
-    ...(Array.isArray(n.tags) ? n.tags : []),
-  ];
-  return parts.filter(Boolean).join(" \n ").toLowerCase();
-}
-
-/** Score a node against query terms. Returns 0 when no term matches. */
-export function scoreNode(n: GraphNode, terms: string[]): number {
-  if (terms.length === 0) return 0;
-  const hay = nodeHaystack(n);
-  const title = (n.title ?? "").toLowerCase();
-  let score = 0;
-  for (const t of terms) {
-    if (!t) continue;
-    if (title.includes(t)) score += 3; // title hits weigh more
-    else if (hay.includes(t)) score += 1;
-  }
-  return score;
-}
-
-/** Split a query string into lower-cased terms. */
-export function queryTerms(q: string): string[] {
-  return q
-    .toLowerCase()
-    .split(/\s+/)
-    .map((t) => t.trim())
-    .filter((t) => t.length > 0);
-}
-
 /** A compact node summary for search/traverse result lists. */
 export function summarise(n: GraphNode): Record<string, unknown> {
-  // /vault/search intentionally omits body from its lightweight result shape;
-  // title is therefore the only reliable readable fallback when a note lacks a
-  // stored summary. `detail` remains for legacy graph responses.
-  const source = [n.summary, n.detail, n.title].find(
+  // /vault/search returns a body `excerpt` rather than the full body, so it
+  // leads. Graph responses carry no excerpt and fall through to summary;
+  // `detail` remains for legacy graph responses and title is the last resort.
+  const source = [n.excerpt, n.summary, n.detail, n.title].find(
     (value): value is string => typeof value === "string" && value.trim().length > 0,
   ) ?? "";
   const text = source.trim();

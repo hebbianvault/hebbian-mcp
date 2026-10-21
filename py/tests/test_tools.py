@@ -23,7 +23,6 @@ from hebbianvault_mcp.tools import (
     UNTRUSTED_CONTENT_PREAMBLE,
     _fetch_graph,
     _frame_untrusted_text,
-    _score,
     handle_ask,
     handle_audit_log,
     handle_capture,
@@ -124,12 +123,12 @@ def _graph() -> dict[str, Any]:
 
 class TestGraphScopeRouting:
     @pytest.mark.asyncio
-    async def test_company_token_routes_search_to_company_graph(self) -> None:
+    async def test_company_token_routes_provenance_to_company_graph(self) -> None:
         client = mock_client(
             get_side_effect=[{"token_scope": "company"}, _graph()],
         )
 
-        await handle_search(client, {"q": "strategy"})
+        await handle_provenance(client, {"uuid": "n1"})
 
         assert client.get.await_args_list == [
             call("/tenant/whoami"),
@@ -150,15 +149,13 @@ class TestGraphScopeRouting:
         ]
 
     @pytest.mark.asyncio
-    async def test_whoami_without_token_scope_routes_search_to_employee_fts(self) -> None:
-        client = mock_client(
-            get_side_effect=[{"tenant_slug": "acme"}, {"results": []}],
-        )
+    async def test_search_calls_fts_without_a_scope_probe(self) -> None:
+        # The server resolves token scope for /vault/search, so search never probes it.
+        client = mock_client(get_side_effect=[{"results": []}])
 
         await handle_search(client, {"q": "strategy"})
 
         assert client.get.await_args_list == [
-            call("/tenant/whoami"),
             call("/vault/search", {"q": "strategy", "limit": 10}),
         ]
 
@@ -183,7 +180,7 @@ class TestGraphScopeRouting:
         )
 
         with pytest.raises(RuntimeError, match="company scope required"):
-            await handle_search(client, {"q": "strategy"})
+            await handle_provenance(client, {"uuid": "n1"})
 
         assert client.get.await_args_list == [
             call("/tenant/whoami"),
@@ -196,7 +193,7 @@ class TestGraphScopeRouting:
             get_side_effect=[{"token_scope": "company"}, _graph(), _graph()],
         )
 
-        await handle_search(client, {"q": "strategy"})
+        await handle_provenance(client, {"uuid": "n1"})
         await handle_traverse(client, {"start_uuid": "n1"})
 
         assert client.get.await_args_list == [
@@ -220,7 +217,7 @@ class TestGraphScopeRouting:
 
         client = mock_client()
         client.get = AsyncMock(side_effect=get)
-        search = asyncio.create_task(handle_search(client, {"q": "strategy"}))
+        provenance = asyncio.create_task(handle_provenance(client, {"uuid": "n1"}))
         await whoami_started.wait()
         traverse = asyncio.create_task(handle_traverse(client, {"start_uuid": "n1"}))
         await asyncio.sleep(0)
@@ -228,7 +225,7 @@ class TestGraphScopeRouting:
         assert client.get.await_args_list == [call("/tenant/whoami")]
 
         release_whoami.set()
-        await asyncio.gather(search, traverse)
+        await asyncio.gather(provenance, traverse)
 
         assert client.get.await_args_list.count(call("/tenant/whoami")) == 1
         assert client.get.await_args_list.count(call("/vault/company-graph")) == 2
@@ -322,7 +319,7 @@ class TestGraphScopeRouting:
         client = mock_client(get_side_effect=[{"token_scope": "company"}, _graph()])
         client.graph_pagination = True
 
-        await handle_search(client, {"q": "strategy"})
+        await handle_provenance(client, {"uuid": "n1"})
 
         assert client.get.await_args_list == [
             call("/tenant/whoami"),
@@ -476,17 +473,13 @@ class TestSearch:
         }
         client = mock_client(
             get_side_effect=[
-                {"token_scope": "employee"},
                 {
                     "results": [fixture]
                 },
             ]
         )
-        terms = ["body-only-term"]
         out = json.loads(await handle_search(client, {"q": "body-only-term", "limit": 5}))
-        assert _score(fixture, terms) == 0
         assert client.get.await_args_list == [
-            call("/tenant/whoami"),
             call("/vault/search", {"q": "body-only-term", "limit": 5}),
         ]
         assert out["results"][0]["uuid"] == "body-only"
@@ -494,10 +487,63 @@ class TestSearch:
         expect_framed(out["results"][0]["snippet"], "No matching term appears in this summary.")
 
     @pytest.mark.asyncio
+    async def test_contract_65_company_tokens_search_server_side_and_snippet_reads_excerpt(
+        self,
+    ) -> None:
+        excerpt = "ADR-061 amends the four estates model so the company estate owns canon."
+        responses = {
+            "/tenant/whoami": {"token_scope": "company"},
+            "/vault/search": {
+                "results": [
+                    {
+                        "uuid": "adr-061",
+                        "title": "ADR-061",
+                        "summary": "",
+                        "excerpt": excerpt,
+                        "domain": "Company",
+                    }
+                ]
+            },
+        }
+        client = mock_client()
+        # Any graph path returns a substring-only "four" match a client scan would find.
+        client.get = AsyncMock(side_effect=lambda path, *_: responses.get(path, _graph()))
+
+        out = json.loads(await handle_search(client, {"q": "ADR-061 four estates amendment"}))
+
+        paths = [c.args[0] for c in client.get.await_args_list]
+        assert call("/vault/search", {"q": "ADR-061 four estates amendment", "limit": 10}) in (
+            client.get.await_args_list
+        )
+        assert not any("graph" in path for path in paths), paths
+        assert [r["uuid"] for r in out["results"]] == ["adr-061"]
+        expect_framed(out["results"][0]["snippet"], excerpt)
+
+    @pytest.mark.asyncio
+    async def test_contract_65_snippet_order_is_excerpt_summary_detail_title(self) -> None:
+        responses = {
+            "/tenant/whoami": {"token_scope": "employee"},
+            "/vault/search": {
+                "results": [
+                    {"uuid": "a", "title": "T", "summary": "S", "detail": "D", "excerpt": "E"},
+                    {"uuid": "b", "title": "T", "summary": "S", "detail": "D", "excerpt": "  "},
+                    {"uuid": "c", "title": "T", "summary": "", "detail": "D"},
+                    {"uuid": "d", "title": "T"},
+                ]
+            },
+        }
+        client = mock_client()
+        client.get = AsyncMock(side_effect=lambda path, *_: responses[path])
+
+        out = json.loads(await handle_search(client, {"q": "anything"}))
+
+        for result, text in zip(out["results"], ["E", "S", "D", "T"], strict=True):
+            expect_framed(result["snippet"], text)
+
+    @pytest.mark.asyncio
     async def test_filters_by_domain(self) -> None:
         client = mock_client(
             get_side_effect=[
-                {"token_scope": "employee"},
                 {
                     "results": [
                         {"uuid": "company", "title": "Roadmap", "domain": "Company"},
@@ -513,7 +559,6 @@ class TestSearch:
     async def test_fetches_client_max_before_filtering_employee_fts_results_by_domain(self) -> None:
         client = mock_client(
             get_side_effect=[
-                {"token_scope": "employee"},
                 {
                     "results": [
                         {"uuid": "crm-1", "title": "Roadmap", "domain": "CRM"},
@@ -529,23 +574,21 @@ class TestSearch:
         )
 
         assert client.get.await_args_list == [
-            call("/tenant/whoami"),
             call("/vault/search", {"q": "roadmap", "limit": 50}),
         ]
         assert [result["uuid"] for result in out["results"]] == ["company-match"]
 
     @pytest.mark.asyncio
     async def test_passes_clamped_limit_to_fts(self) -> None:
-        client = mock_client(get_side_effect=[{"token_scope": "employee"}, {"results": []}])
+        client = mock_client(get_side_effect=[{"results": []}])
         await handle_search(client, {"q": "strategy", "limit": 999})
         assert client.get.await_args_list == [
-            call("/tenant/whoami"),
             call("/vault/search", {"q": "strategy", "limit": 50}),
         ]
 
     @pytest.mark.asyncio
     async def test_empty_results_include_a_sane_message(self) -> None:
-        client = mock_client(get_side_effect=[{"token_scope": "employee"}, {"results": []}])
+        client = mock_client(get_side_effect=[{"results": []}])
         out = json.loads(await handle_search(client, {"q": "missing"}))
         assert out == {
             "query": "missing",
