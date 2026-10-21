@@ -43,7 +43,7 @@ import {
   HEBBIAN_AUDIT_LOG,
 } from "../src/tools/index.js";
 import { frameUntrustedText, UNTRUSTED_CONTENT_PREAMBLE } from "../src/tools/untrusted_content.js";
-import { fetchGraph, MAX_GRAPH_PAGES, queryTerms, scoreNode } from "../src/tools/graph_helpers.js";
+import { fetchGraph, MAX_GRAPH_PAGES } from "../src/tools/graph_helpers.js";
 
 // ── Mock client factory ───────────────────────────────────────────────────────
 
@@ -262,7 +262,7 @@ describe("fetchGraph", () => {
     });
     const client = mockClient({ get });
 
-    await handleSearch(client, { q: "strategy" });
+    await handleProvenance(client, { uuid: "n1" });
     await handleTraverse(client, { start_uuid: "n1" });
 
     expect(get.mock.calls.filter(([path]) => path === "/tenant/whoami")).toHaveLength(1);
@@ -591,11 +591,9 @@ describe("hebbian_search", () => {
       return Promise.resolve({ nodes: [] });
     });
     const client = mockClient({ get });
-    const terms = queryTerms("body-only-term");
 
     const out = JSON.parse(await handleSearch(client, { q: "body-only-term", limit: 5 }));
 
-    expect(scoreNode(fixture, terms)).toBe(0);
     expect(get).toHaveBeenCalledWith("/vault/search", { q: "body-only-term", limit: 5 });
     expect(get).not.toHaveBeenCalledWith("/vault/graph");
     expect(out.results[0].uuid).toBe("body-only");
@@ -605,7 +603,6 @@ describe("hebbian_search", () => {
 
   test("filters by domain", async () => {
     const get = jest.fn()
-      .mockResolvedValueOnce({ token_scope: "employee" })
       .mockResolvedValueOnce({ results: [
         { uuid: "company", title: "Roadmap", summary: "Company plan", domain: "Company" },
         { uuid: "crm", title: "Roadmap", summary: "CRM plan", domain: "CRM" },
@@ -615,9 +612,8 @@ describe("hebbian_search", () => {
     expect(out.results.every((r: { domain: string }) => r.domain === "Company")).toBe(true);
   });
 
-  test("fetches the client maximum before filtering employee FTS results by domain", async () => {
+  test("fetches the server maximum before filtering FTS results by domain", async () => {
     const get = jest.fn()
-      .mockResolvedValueOnce({ token_scope: "employee" })
       .mockResolvedValueOnce({ results: [
         { uuid: "crm-1", title: "Roadmap", domain: "CRM" },
         { uuid: "crm-2", title: "Roadmap", domain: "CRM" },
@@ -628,27 +624,53 @@ describe("hebbian_search", () => {
       q: "roadmap", domain: "Company", limit: 2,
     }));
 
-    expect(get).toHaveBeenCalledWith("/vault/search", { q: "roadmap", limit: 50 });
+    expect(get).toHaveBeenCalledWith("/vault/search", { q: "roadmap", limit: 100 });
     expect(out.results.map((result: { uuid: string }) => result.uuid)).toEqual(["company-match"]);
   });
 
-  test("routes company tokens through the company graph without calling employee FTS", async () => {
+  test("contract #65: company tokens search server-side and the snippet reads excerpt", async () => {
+    const excerpt = "ADR-061 amends the four estates model so the company estate owns canon.";
     const get = jest.fn((path: string) => {
       if (path === "/tenant/whoami") return Promise.resolve({ token_scope: "company" });
-      if (path === "/vault/company-graph") return Promise.resolve(graph());
-      throw new Error(`unexpected endpoint: ${path}`);
+      if (path === "/vault/search") {
+        return Promise.resolve({
+          results: [{ uuid: "adr-061", title: "ADR-061", summary: "", excerpt, domain: "Company" }],
+        });
+      }
+      // A client-side scan would find this substring-only "four" match.
+      return Promise.resolve(graph());
     });
 
-    const out = JSON.parse(await handleSearch(mockClient({ get }), { q: "strategy" }));
+    const out = JSON.parse(await handleSearch(mockClient({ get }), {
+      q: "ADR-061 four estates amendment",
+    }));
 
-    expect(out.results[0].uuid).toBe("n1");
-    expect(get).toHaveBeenCalledWith("/vault/company-graph");
-    expect(get).not.toHaveBeenCalledWith("/vault/search", expect.anything());
+    expect(get).toHaveBeenCalledWith("/vault/search", { q: "ADR-061 four estates amendment", limit: 10 });
+    expect(get).not.toHaveBeenCalledWith("/vault/graph");
+    expect(get).not.toHaveBeenCalledWith("/vault/company-graph");
+    expect(get.mock.calls.some(([path]) => String(path).includes("graph"))).toBe(false);
+    expect(out.results.map((r: { uuid: string }) => r.uuid)).toEqual(["adr-061"]);
+    expect(out.results[0].snippet).toBe(excerpt);
+  });
+
+  test("contract #65: snippet order is excerpt, summary, detail, title", async () => {
+    const get = jest.fn((path: string) => {
+      if (path === "/tenant/whoami") return Promise.resolve({ token_scope: "employee" });
+      return Promise.resolve({ results: [
+        { uuid: "a", title: "T", summary: "S", detail: "D", excerpt: "E" },
+        { uuid: "b", title: "T", summary: "S", detail: "D", excerpt: "  " },
+        { uuid: "c", title: "T", summary: "", detail: "D" },
+        { uuid: "d", title: "T" },
+      ] });
+    });
+
+    const out = JSON.parse(await handleSearch(mockClient({ get }), { q: "anything" }));
+
+    expect(out.results.map((r: { snippet: string }) => r.snippet)).toEqual(["E", "S", "D", "T"]);
   });
 
   test("passes the clamped limit through to FTS", async () => {
     const get = jest.fn()
-      .mockResolvedValueOnce({ token_scope: "employee" })
       .mockResolvedValueOnce({ results: [] });
     await handleSearch(mockClient({ get }), { q: "strategy", limit: 999 });
     expect(get).toHaveBeenCalledWith("/vault/search", { q: "strategy", limit: 50 });
@@ -656,7 +678,6 @@ describe("hebbian_search", () => {
 
   test("renders an empty-result message", async () => {
     const get = jest.fn()
-      .mockResolvedValueOnce({ token_scope: "employee" })
       .mockResolvedValueOnce({ results: [] });
     const out = JSON.parse(await handleSearch(mockClient({ get }), { q: "missing" }));
     expect(out).toMatchObject({ count: 0, results: [] });
@@ -666,6 +687,20 @@ describe("hebbian_search", () => {
   test("throws on empty query", async () => {
     const client = mockClient();
     await expect(handleSearch(client, { q: "   " })).rejects.toThrow("q is required");
+  });
+
+  test.each([
+    [new HebbianApiError(401, "invalid_token", "x"), "Authentication failed (invalid_token): x."],
+    [new HebbianApiError(403, "forbidden", "scope"), "Permission denied (forbidden): scope."],
+    [new HebbianApiError(503, "unavailable", "try later"), "API error 503 (unavailable): try later"],
+  ])("surfaces a /vault/search %s as a tool error", async (apiError, message) => {
+    const get = jest.fn().mockRejectedValue(apiError);
+
+    const failure = handleSearch(mockClient({ get }), { q: "strategy" });
+
+    await expect(failure).rejects.toThrow(message);
+    await expect(failure).rejects.not.toBeInstanceOf(HebbianApiError);
+    expect(get).toHaveBeenCalledTimes(1);
   });
 });
 

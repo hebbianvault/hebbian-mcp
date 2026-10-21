@@ -128,7 +128,7 @@ Write `~/.config/hebbian/mcp-tenant.json`:
 
 ## Token scope
 
-Your token decides what the adapter can see and do — a personal-workspace token gives access to your own knowledge; a company-workspace token gives access to the shared company workspace (where your role allows). Scope is decided by the Hebbian service. Search uses server-side full-text retrieval for employee-scope tokens. Traverse and provenance route company-scoped tokens to the company graph and other tokens to the workspace graph; search retains that company-graph path until an org-wide search endpoint is available. If the advisory scope probe fails, the adapter caches the employee fallback for its process lifetime; restarting the MCP process clears that cached fallback.
+Your token decides what the adapter can see and do — a personal-workspace token gives access to your own knowledge; a company-workspace token gives access to the shared company workspace (where your role allows). Scope is decided by the Hebbian service. Search uses server-side full-text retrieval for every token scope, and the service decides which workspace a token searches. Traverse and provenance route company-scoped tokens to the company graph and other tokens to the workspace graph. If the advisory scope probe fails, the adapter caches the employee fallback for its process lifetime; restarting the MCP process clears that cached fallback.
 
 ## Tools
 

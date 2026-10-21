@@ -41,6 +41,10 @@ NEIGHBOURHOOD_MAX_CHARS = 15_000
 NEIGHBOURHOOD_MAX_DEPTH = 3
 DEFAULT_SEARCH_LIMIT = 10
 MAX_SEARCH_LIMIT = 50
+# Largest `limit` GET /vault/search accepts (server `_SEARCH_MAX_LIMIT`).
+SERVER_SEARCH_MAX_LIMIT = 100
+# Snippet length cap, matching the TypeScript summarise().
+SNIPPET_MAX_CHARS = 280
 DEFAULT_ACTIVITY_LIMIT = 20
 MAX_ACTIVITY_LIMIT = 100
 DEFAULT_BUDGET_TOKENS = 2000
@@ -609,37 +613,33 @@ async def _is_company_scope(client: HebbianClient) -> bool:
     return client._graph_token_scope == "company"  # noqa: S105 - service scope label
 
 
-def _node_haystack(node: dict[str, Any]) -> str:
-    tags = node.get("tags") or []
-    parts = [
-        node.get("title"),
-        node.get("summary"),
-        node.get("detail"),
-        node.get("domain"),
-        node.get("archetype"),
-        *(tags if isinstance(tags, list) else []),
-    ]
-    return " \n ".join(str(p) for p in parts if p).lower()
+def _search_snippet(node: dict[str, Any]) -> str:
+    """Readable search-hit snippet, cut at a word boundary within SNIPPET_MAX_CHARS.
+
+    /vault/search returns a body ``excerpt`` rather than the full body, so it
+    leads; then summary, legacy ``detail``, and title as the last resort.
+    Mirrors the TypeScript summarise().
+    """
+    text = ""
+    for key in ("excerpt", "summary", "detail", "title"):
+        value = node.get(key)
+        if isinstance(value, str) and value.strip():
+            text = value.strip()
+            break
+    if len(text) <= SNIPPET_MAX_CHARS:
+        return text
+    head = text[: SNIPPET_MAX_CHARS + 1]
+    boundary = max(head.rfind("\n"), head.rfind(" "))
+    return (head[:boundary] if boundary > 0 else head[:SNIPPET_MAX_CHARS]).rstrip()
 
 
-def _score(node: dict[str, Any], terms: list[str]) -> int:
-    if not terms:
-        return 0
-    hay = _node_haystack(node)
-    title = str(node.get("title") or "").lower()
-    score = 0
-    for t in terms:
-        if not t:
-            continue
-        if t in title:
-            score += 3
-        elif t in hay:
-            score += 1
-    return score
-
-
-def _summarise(node: dict[str, Any]) -> dict[str, Any]:
-    snippet = str(node.get("summary") or node.get("detail") or "")[:280]
+def _summarise(node: dict[str, Any], *, search_hit: bool = False) -> dict[str, Any]:
+    # Graph nodes (traverse) keep their summary/detail snippet unchanged.
+    snippet = (
+        _search_snippet(node)
+        if search_hit
+        else str(node.get("summary") or node.get("detail") or "")[:SNIPPET_MAX_CHARS]
+    )
     return {
         "uuid": node.get("uuid"),
         "title": node.get("title"),
@@ -754,44 +754,32 @@ async def handle_read_node(client: HebbianClient, args: dict[str, Any]) -> str:
 
 
 async def handle_search(client: HebbianClient, args: dict[str, Any]) -> str:
-    """Search via server FTS, retaining the company-graph compatibility path."""
+    """Search via server FTS for every token scope; the server owns scope and ranking."""
     q = _require_str(args, "q")
     limit = min(max(1, int(args.get("limit", DEFAULT_SEARCH_LIMIT))), MAX_SEARCH_LIMIT)
     domain = args.get("domain")
     trimmed_query = q.strip()
-    truncated = False
 
     try:
-        if await _is_company_scope(client):
-            # /vault/search uses employee-union RLS even for company tokens. Keep
-            # Plan 2.1's company-graph behaviour until org-wide FTS exists.
-            nodes, truncated = await _fetch_graph(client)
-            if domain:
-                d = str(domain).lower()
-                nodes = [n for n in nodes if str(n.get("domain") or "").lower() == d]
-            terms = [term for term in trimmed_query.lower().split() if term]
-            ranked = sorted(
-                ((node, _score(node, terms)) for node in nodes),
-                key=lambda item: item[1],
-                reverse=True,
-            )
-            results = [_summarise(node) for node, score in ranked if score > 0][:limit]
-        else:
-            response = await client.get(
-                "/vault/search",
-                {"q": trimmed_query, "limit": MAX_SEARCH_LIMIT if domain else limit},
-            )
-            hits = response.get("results") if isinstance(response, dict) else None
-            results = hits if isinstance(hits, list) else []
-            if domain:
-                d = str(domain).lower()
-                results = [
-                    result
-                    for result in results
-                    if isinstance(result, dict)
-                    and str(result.get("domain") or "").lower() == d
-                ]
-            results = [_summarise(result) for result in results if isinstance(result, dict)][:limit]
+        # Domain filtering happens locally because the FTS endpoint does not accept a
+        # domain filter. Fetch the server maximum first so matches ranked below the
+        # caller's window are not lost before filtering.
+        response = await client.get(
+            "/vault/search",
+            {"q": trimmed_query, "limit": SERVER_SEARCH_MAX_LIMIT if domain else limit},
+        )
+        hits = response.get("results") if isinstance(response, dict) else None
+        results = hits if isinstance(hits, list) else []
+        if domain:
+            d = str(domain).lower()
+            results = [
+                result
+                for result in results
+                if isinstance(result, dict) and str(result.get("domain") or "").lower() == d
+            ]
+        results = [
+            _summarise(result, search_hit=True) for result in results if isinstance(result, dict)
+        ][:limit]
     except HebbianApiError as exc:
         raise RuntimeError(exc.to_tool_error()) from exc
 
@@ -803,8 +791,6 @@ async def handle_search(client: HebbianClient, args: dict[str, Any]) -> str:
     }
     if not results:
         output["message"] = "No matching nodes found."
-    if truncated:
-        output["truncated"] = True
     return _stringify_untrusted_result(output)
 
 

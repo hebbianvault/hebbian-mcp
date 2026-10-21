@@ -4,22 +4,15 @@
  * Tool: hebbian_search
  * Search the workspace for nodes matching a query.
  *
- * Employee-scoped search uses the API's full-text endpoint so matches in note
- * bodies are returned. Company-scoped tokens retain the company-graph fallback
- * because /vault/search intentionally uses the employee-union RLS view.
+ * Every token scope uses the API's full-text endpoint. The server resolves the
+ * scope from the token (company tokens search the company pool) and owns the
+ * ranking; this client only filters by domain and shapes the result list.
  */
 
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 import type { HebbianClient } from "../client.js";
 import { HebbianApiError } from "../client.js";
-import {
-  fetchGraph,
-  isCompanyScope,
-  queryTerms,
-  scoreNode,
-  summarise,
-  type GraphNode,
-} from "./graph_helpers.js";
+import { summarise, type GraphNode } from "./graph_helpers.js";
 import { stringifyUntrustedResult } from "./untrusted_content.js";
 
 export const HEBBIAN_SEARCH: Tool = {
@@ -57,6 +50,9 @@ export const HEBBIAN_SEARCH: Tool = {
   },
 };
 
+/** Largest `limit` GET /vault/search accepts (server `_SEARCH_MAX_LIMIT`). */
+const SERVER_SEARCH_MAX_LIMIT = 100;
+
 interface SearchArgs {
   q: string;
   domain?: string;
@@ -81,40 +77,19 @@ export async function handleSearch(
   const trimmedQuery = q.trim();
 
   try {
-    let ranked: Record<string, unknown>[];
-    let truncated = false;
-    if (await isCompanyScope(client)) {
-      // /vault/search is employee-union scoped even for company tokens. Keep
-      // Plan 2.1's company-graph behaviour until the API offers an org-wide FTS view.
-      const graph = await fetchGraph(client);
-      let nodes: GraphNode[] = graph.nodes;
-      truncated = graph.truncated;
-      if (domain) {
-        const d = domain.toLowerCase();
-        nodes = nodes.filter((n) => (n.domain ?? "").toLowerCase() === d);
-      }
-      const terms = queryTerms(trimmedQuery);
-      ranked = nodes
-        .map((n) => ({ n, score: scoreNode(n, terms) }))
-        .filter((x) => x.score > 0)
-        .sort((a, b) => b.score - a.score)
-        .slice(0, cap)
-        .map((x) => summarise(x.n));
-    } else {
-      const response = (await client.get("/vault/search", {
-        q: trimmedQuery,
-        // Domain filtering happens locally because the FTS endpoint does not
-        // accept a domain filter. Fetch the client maximum first so matches
-        // ranked below the caller's window are not lost before filtering.
-        limit: domain ? 50 : cap,
-      })) as SearchResponse;
-      let results = Array.isArray(response.results) ? response.results : [];
-      if (domain) {
-        const d = domain.toLowerCase();
-        results = results.filter((n) => (n.domain ?? "").toLowerCase() === d);
-      }
-      ranked = results.slice(0, cap).map(summarise);
+    const response = (await client.get("/vault/search", {
+      q: trimmedQuery,
+      // Domain filtering happens locally because the FTS endpoint does not
+      // accept a domain filter. Fetch the server maximum first so matches
+      // ranked below the caller's window are not lost before filtering.
+      limit: domain ? SERVER_SEARCH_MAX_LIMIT : cap,
+    })) as SearchResponse;
+    let results = Array.isArray(response.results) ? response.results : [];
+    if (domain) {
+      const d = domain.toLowerCase();
+      results = results.filter((n) => (n.domain ?? "").toLowerCase() === d);
     }
+    const ranked = results.slice(0, cap).map(summarise);
 
     const result: Record<string, unknown> = {
       query: trimmedQuery,
@@ -122,7 +97,6 @@ export async function handleSearch(
       count: ranked.length,
       results: ranked,
     };
-    if (truncated) result.truncated = true;
     if (ranked.length === 0) result.message = "No matching nodes found.";
     return stringifyUntrustedResult(result);
   } catch (err) {
