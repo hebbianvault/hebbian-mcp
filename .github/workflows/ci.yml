@@ -39,6 +39,20 @@ jobs:
             done
           done < docs/live-hosts.txt
 
+  thin-client:
+    name: Thin client guard
+    runs-on: ${{ vars.CI_RUNNER_4CPU || 'depot-ubuntu-24.04-4' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Check source stays a thin client
+        run: python3 scripts/check_thin_client.py
+
   contract-drift:
     name: Contract drift
     runs-on: ${{ vars.CI_RUNNER_4CPU || 'depot-ubuntu-24.04-4' }}

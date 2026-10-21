@@ -239,6 +239,12 @@ pytest
 ruff check src/ tests/
 ```
 
+## Thin client rule
+
+This repo is a thin client and stays one. It holds transport, auth handoff, tool schemas, client-side secret redaction, and calls to `api.hebbianvault.com`. It holds no product logic: no access or scope rules, no ranking or synthesis, no database, graph, or storage clients, and no credentials. All product behaviour lives behind the Hebbian API.
+
+CI enforces this with `scripts/check_thin_client.py`, which fails on imports of database or storage clients and on any host other than `api.hebbianvault.com` or localhost.
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md).
