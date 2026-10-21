@@ -41,6 +41,8 @@ NEIGHBOURHOOD_MAX_CHARS = 15_000
 NEIGHBOURHOOD_MAX_DEPTH = 3
 DEFAULT_SEARCH_LIMIT = 10
 MAX_SEARCH_LIMIT = 50
+# Largest `limit` GET /vault/search accepts (server `_SEARCH_MAX_LIMIT`).
+SERVER_SEARCH_MAX_LIMIT = 100
 # Snippet length cap, matching the TypeScript summarise().
 SNIPPET_MAX_CHARS = 280
 DEFAULT_ACTIVITY_LIMIT = 20
@@ -759,24 +761,27 @@ async def handle_search(client: HebbianClient, args: dict[str, Any]) -> str:
     trimmed_query = q.strip()
 
     try:
+        # Domain filtering happens locally because the FTS endpoint does not accept a
+        # domain filter. Fetch the server maximum first so matches ranked below the
+        # caller's window are not lost before filtering.
         response = await client.get(
             "/vault/search",
-            {"q": trimmed_query, "limit": MAX_SEARCH_LIMIT if domain else limit},
+            {"q": trimmed_query, "limit": SERVER_SEARCH_MAX_LIMIT if domain else limit},
         )
+        hits = response.get("results") if isinstance(response, dict) else None
+        results = hits if isinstance(hits, list) else []
+        if domain:
+            d = str(domain).lower()
+            results = [
+                result
+                for result in results
+                if isinstance(result, dict) and str(result.get("domain") or "").lower() == d
+            ]
+        results = [
+            _summarise(result, search_hit=True) for result in results if isinstance(result, dict)
+        ][:limit]
     except HebbianApiError as exc:
         raise RuntimeError(exc.to_tool_error()) from exc
-    hits = response.get("results") if isinstance(response, dict) else None
-    results = hits if isinstance(hits, list) else []
-    if domain:
-        d = str(domain).lower()
-        results = [
-            result
-            for result in results
-            if isinstance(result, dict) and str(result.get("domain") or "").lower() == d
-        ]
-    results = [
-        _summarise(result, search_hit=True) for result in results if isinstance(result, dict)
-    ][:limit]
 
     output: dict[str, Any] = {
         "query": trimmed_query,

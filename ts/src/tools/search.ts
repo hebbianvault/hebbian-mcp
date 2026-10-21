@@ -50,6 +50,9 @@ export const HEBBIAN_SEARCH: Tool = {
   },
 };
 
+/** Largest `limit` GET /vault/search accepts (server `_SEARCH_MAX_LIMIT`). */
+const SERVER_SEARCH_MAX_LIMIT = 100;
+
 interface SearchArgs {
   q: string;
   domain?: string;
@@ -77,9 +80,9 @@ export async function handleSearch(
     const response = (await client.get("/vault/search", {
       q: trimmedQuery,
       // Domain filtering happens locally because the FTS endpoint does not
-      // accept a domain filter. Fetch the client maximum first so matches
+      // accept a domain filter. Fetch the server maximum first so matches
       // ranked below the caller's window are not lost before filtering.
-      limit: domain ? 50 : cap,
+      limit: domain ? SERVER_SEARCH_MAX_LIMIT : cap,
     })) as SearchResponse;
     let results = Array.isArray(response.results) ? response.results : [];
     if (domain) {

@@ -556,7 +556,7 @@ class TestSearch:
         assert all(r["domain"] == "Company" for r in out["results"])
 
     @pytest.mark.asyncio
-    async def test_fetches_client_max_before_filtering_employee_fts_results_by_domain(self) -> None:
+    async def test_fetches_server_max_before_filtering_fts_results_by_domain(self) -> None:
         client = mock_client(
             get_side_effect=[
                 {
@@ -574,7 +574,7 @@ class TestSearch:
         )
 
         assert client.get.await_args_list == [
-            call("/vault/search", {"q": "roadmap", "limit": 50}),
+            call("/vault/search", {"q": "roadmap", "limit": 100}),
         ]
         assert [result["uuid"] for result in out["results"]] == ["company-match"]
 
@@ -606,6 +606,27 @@ class TestSearch:
         client = mock_client()
         with pytest.raises(ValueError, match="'q' is required"):
             await handle_search(client, {"q": "   "})
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        ("api_error", "message"),
+        [
+            (HebbianApiError(401, "invalid_token", "x"), "Authentication failed (invalid_token): x."),
+            (HebbianApiError(403, "forbidden", "scope"), "Permission denied (forbidden): scope."),
+            (HebbianApiError(503, "unavailable", "try later"), "API error 503 (unavailable): try later"),
+        ],
+    )
+    async def test_surfaces_vault_search_api_errors_as_tool_errors(
+        self, api_error: HebbianApiError, message: str
+    ) -> None:
+        client = mock_client(get_side_effect=api_error)
+
+        with pytest.raises(RuntimeError) as excinfo:
+            await handle_search(client, {"q": "strategy"})
+
+        assert str(excinfo.value).startswith(message)
+        assert not isinstance(excinfo.value, HebbianApiError)
+        assert client.get.await_count == 1
 
 
 # ── hebbian_ask ───────────────────────────────────────────────────────────────

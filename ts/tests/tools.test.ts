@@ -612,7 +612,7 @@ describe("hebbian_search", () => {
     expect(out.results.every((r: { domain: string }) => r.domain === "Company")).toBe(true);
   });
 
-  test("fetches the client maximum before filtering employee FTS results by domain", async () => {
+  test("fetches the server maximum before filtering FTS results by domain", async () => {
     const get = jest.fn()
       .mockResolvedValueOnce({ results: [
         { uuid: "crm-1", title: "Roadmap", domain: "CRM" },
@@ -624,7 +624,7 @@ describe("hebbian_search", () => {
       q: "roadmap", domain: "Company", limit: 2,
     }));
 
-    expect(get).toHaveBeenCalledWith("/vault/search", { q: "roadmap", limit: 50 });
+    expect(get).toHaveBeenCalledWith("/vault/search", { q: "roadmap", limit: 100 });
     expect(out.results.map((result: { uuid: string }) => result.uuid)).toEqual(["company-match"]);
   });
 
@@ -687,6 +687,20 @@ describe("hebbian_search", () => {
   test("throws on empty query", async () => {
     const client = mockClient();
     await expect(handleSearch(client, { q: "   " })).rejects.toThrow("q is required");
+  });
+
+  test.each([
+    [new HebbianApiError(401, "invalid_token", "x"), "Authentication failed (invalid_token): x."],
+    [new HebbianApiError(403, "forbidden", "scope"), "Permission denied (forbidden): scope."],
+    [new HebbianApiError(503, "unavailable", "try later"), "API error 503 (unavailable): try later"],
+  ])("surfaces a /vault/search %s as a tool error", async (apiError, message) => {
+    const get = jest.fn().mockRejectedValue(apiError);
+
+    const failure = handleSearch(mockClient({ get }), { q: "strategy" });
+
+    await expect(failure).rejects.toThrow(message);
+    await expect(failure).rejects.not.toBeInstanceOf(HebbianApiError);
+    expect(get).toHaveBeenCalledTimes(1);
   });
 });
 
