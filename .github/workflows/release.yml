@@ -58,7 +58,7 @@ jobs:
   publish-pypi:
     name: Publish hebbianvault-mcp to PyPI
     needs: verify-publish-source
-    runs-on: depot-ubuntu-24.04-4
+    runs-on: ${{ vars.CI_RUNNER_4CPU || 'depot-ubuntu-24.04-4' }}
     # Trusted publishing (OIDC): no PYPI_API_TOKEN secret. One-time setup on
     # pypi.org → project hebbianvault-mcp → Publishing → add GitHub publisher:
     # owner hebbianvault, repo hebbian-mcp, workflow release.yml.
@@ -100,7 +100,7 @@ jobs:
   verify-registry-parity:
     name: Verify npm and PyPI registry parity
     needs: [publish-npm, publish-pypi]
-    runs-on: depot-ubuntu-24.04-4
+    runs-on: ${{ vars.CI_RUNNER_4CPU || 'depot-ubuntu-24.04-4' }}
     steps:
       - uses: actions/setup-node@v4
         with:
@@ -154,7 +154,7 @@ jobs:
 
   bump-homebrew-formula:
     needs: publish-npm
-    runs-on: depot-ubuntu-24.04-4
+    runs-on: ${{ vars.CI_RUNNER_4CPU || 'depot-ubuntu-24.04-4' }}
     steps:
       - name: Extract npm package version
         id: ver

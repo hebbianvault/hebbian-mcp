@@ -16,7 +16,7 @@ concurrency:
 jobs:
   docs:
     name: Documentation
-    runs-on: depot-ubuntu-24.04-4
+    runs-on: ${{ vars.CI_RUNNER_4CPU || 'depot-ubuntu-24.04-4' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -41,7 +41,7 @@ jobs:
 
   contract-drift:
     name: Contract drift
-    runs-on: depot-ubuntu-24.04-4
+    runs-on: ${{ vars.CI_RUNNER_4CPU || 'depot-ubuntu-24.04-4' }}
 
     steps:
       - uses: actions/checkout@v4
@@ -58,7 +58,7 @@ jobs:
 
   ts:
     name: TypeScript — lint + typecheck + tests
-    runs-on: depot-ubuntu-24.04-4
+    runs-on: ${{ vars.CI_RUNNER_4CPU || 'depot-ubuntu-24.04-4' }}
     defaults:
       run:
         working-directory: ts/
@@ -89,7 +89,7 @@ jobs:
 
   py:
     name: Python — lint + typecheck + tests
-    runs-on: depot-ubuntu-24.04-4
+    runs-on: ${{ vars.CI_RUNNER_4CPU || 'depot-ubuntu-24.04-4' }}
     defaults:
       run:
         working-directory: py/
