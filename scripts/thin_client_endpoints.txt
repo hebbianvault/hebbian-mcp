@@ -1,0 +1,15 @@
+# Paths a tool may call (DEC #268). Add /v1/search and /v1/traverse with Hebbian #2359.
+/ask
+/capture
+/healthz
+/metrics/nodes/{}/activation-history
+/nodes/{}
+/tenant/whoami
+/tenant/export
+/tenant/audit-log
+/usage/company
+/usage/me
+/v1/agents/{}/absorb
+/v1/context
+/vault/activity
+/vault/search

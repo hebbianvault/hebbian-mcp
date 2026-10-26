@@ -12,6 +12,8 @@ This repo is a thin client and stays one. It holds transport, auth handoff, tool
 
 CI enforces this with `scripts/check_thin_client.py`, which fails on imports of database or storage clients and on any host other than `api.hebbianvault.com` or localhost.
 
+The same script also checks logic. Tools may call only the paths in `scripts/thin_client_endpoints.txt` (`/vault/graph` and `/vault/company-graph` are not on it). It also bans score or rank functions, `visited` sets, graph caches with a TTL, and sorts in tool code. Existing violations are listed in `scripts/thin_client_baseline.txt`, one `file:symbol rule` key per line. CI fails on any violation not in the baseline, and on any baseline line whose violation is gone, so the baseline only shrinks. When you remove a violation, delete its line; never add one. The checks match names and shapes, so they are a guard, not a proof.
+
 ## Bug fixes
 
 Open a PR. Include:
