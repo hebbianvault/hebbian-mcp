@@ -86,3 +86,11 @@ def test_deleting_any_baseline_line_fails(tmp_path: Path) -> None:
         result = run("--baseline", trimmed)
         assert result.returncode == 1, f"deleting {line!r} did not fail the check"
         assert "NEW" in result.stdout
+
+
+def test_query_string_does_not_hide_a_banned_endpoint(empty_baseline: Path) -> None:
+    result = run("--repo", FIXTURES / "bad_query", "--baseline", empty_baseline)
+    assert result.returncode != 0, result.stdout
+    assert "query_tool.ts:handleQuery endpoint /vault/graph" in result.stdout
+    assert "tools.py:handle_query endpoint /vault/graph" in result.stdout
+    assert "tools.py:handle_query_literal endpoint /vault/graph" in result.stdout

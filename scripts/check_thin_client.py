@@ -56,6 +56,17 @@ TS_IMPORT_RE = re.compile(
 PY_IMPORT_RE = re.compile(r"^\s*(?:from\s+([\w.]+)\s+import|import\s+([\w., ]+))", re.MULTILINE)
 
 PATH_RE = re.compile(r"^/[a-z][\w\-/{}$.]*$")
+
+
+def endpoint_path(value: str) -> str | None:
+    """Return the endpoint path of a string literal, or None when it is not one.
+
+    The query string is stripped first: PATH_RE rejects '?' and '=', so without
+    this a call such as "/vault/graph?limit=5" would never be checked against
+    the allowlist.
+    """
+    path = value.split("?", 1)[0]
+    return path if PATH_RE.match(path) else None
 RANK_RE = re.compile(r"score|rank", re.IGNORECASE)
 VISITED_RE = re.compile(r"visited", re.IGNORECASE)
 CACHE_RE = re.compile(r"graph_?cache|cache_?ttl", re.IGNORECASE)
@@ -191,8 +202,9 @@ def ts_findings(text: str, tool_code: bool) -> set[tuple[str, str, str]]:
         found.add((sym, rule, "" if detail == sym else detail))
 
     for offset, value in strings:
-        if PATH_RE.match(value):
-            add(offset, "endpoint", path_shape(value))
+        path = endpoint_path(value)
+        if path is not None:
+            add(offset, "endpoint", path_shape(path))
     for m in TS_FN_DECL_RE.finditer(code):
         name = m.group(1) or m.group(2)
         if RANK_RE.search(name):
@@ -285,11 +297,13 @@ def py_findings(text: str, tool_code: bool) -> set[tuple[str, str, str]]:
                         add("visited-set")
             elif isinstance(node, ast.JoinedStr):
                 value = _py_fstring_text(node)
-                if PATH_RE.match(value):
-                    add("endpoint", path_shape(value))
+                path = endpoint_path(value)
+                if path is not None:
+                    add("endpoint", path_shape(path))
             elif isinstance(node, ast.Constant):
-                if isinstance(node.value, str) and id(node) not in skip and PATH_RE.match(node.value):
-                    add("endpoint", path_shape(node.value))
+                path = endpoint_path(node.value) if isinstance(node.value, str) and id(node) not in skip else None
+                if path is not None:
+                    add("endpoint", path_shape(path))
             elif tool_code and isinstance(node, ast.Call):
                 fn = node.func
                 if isinstance(fn, ast.Attribute) and fn.attr in ("sort", "sorted"):

@@ -53,6 +53,11 @@ jobs:
       - name: Check source stays a thin client
         run: python3 scripts/check_thin_client.py
 
+      - name: Test the thin client guard itself
+        run: |
+          pip install pytest
+          python3 -m pytest tests/test_check_thin_client_logic.py -q
+
   contract-drift:
     name: Contract drift
     runs-on: ${{ vars.CI_RUNNER_4CPU || 'depot-ubuntu-24.04-4' }}
