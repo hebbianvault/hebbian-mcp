@@ -1,21 +1,12 @@
 Using CPython 3.11.17 interpreter at: /opt/hostedtoolcache/Python/3.11.17/x64/bin/python3
-Resolved 45 packages in 1.71s
-Updated anyio v4.13.0 -> v4.16.0
-Updated certifi v2026.4.22 -> v2026.10.23
-Updated cryptography v48.0.0 -> v50.0.2
-Updated hebbianvault-mcp v0.6.1 -> v0.6.2
-Added httpcore2 v2.16.0
-Removed httpx-sse v0.4.3
-Added httpx2 v2.16.0
-Added httpx2-jsfetch v1.0
-Updated idna v3.15 -> v3.20
-Updated mcp v1.27.1 -> v2.3.0
-Added mcp-types v2.3.0
-Added opentelemetry-api v1.45.2
-Removed pydantic-settings v2.14.1
-Updated pyjwt v2.12.1 -> v2.15.1
-Removed python-dotenv v1.2.2
-Updated python-multipart v0.0.28 -> v0.0.33
-Updated starlette v1.0.0 -> v1.10.0
-Added truststore v0.10.5
-Updated typing-extensions v4.15.0 -> v4.16.0
+Resolved 42 packages in 1.46s
+Removed httpcore2 v2.16.0
+Added httpx-sse v0.4.3
+Removed httpx2 v2.16.0
+Removed httpx2-jsfetch v1.0
+Updated mcp v2.3.0 -> v1.30.0
+Removed mcp-types v2.3.0
+Removed opentelemetry-api v1.45.2
+Added pydantic-settings v2.16.2
+Added python-dotenv v1.2.4
+Removed truststore v0.10.5
