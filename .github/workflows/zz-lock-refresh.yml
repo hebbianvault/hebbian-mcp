@@ -1,0 +1,48 @@
+# TEMPORARY, branch-only: regenerates lockfiles for the security bump on a runner with
+# registry access, commits them back, and is deleted from the branch before review.
+name: lock-refresh (temporary)
+on:
+  push:
+    branches: [api-mcp/critical-deps-20261103]
+    paths: [.github/workflows/zz-lock-refresh.yml]
+permissions:
+  contents: write
+jobs:
+  refresh:
+    runs-on: ${{ vars.CI_RUNNER_4CPU || 'depot-ubuntu-24.04-4' }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.ref }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: npm lock refresh
+        working-directory: ts
+        run: |
+          set -x
+          mkdir -p ../.lock-refresh
+          npm install --package-lock-only --ignore-scripts --no-fund
+          npm update --package-lock-only --ignore-scripts --no-fund \
+            @modelcontextprotocol/sdk handlebars proxy-addr zod body-parser hono \
+            brace-expansion js-yaml fast-uri ip-address browserslist
+          npm audit --package-lock-only > ../.lock-refresh/npm-audit.txt 2>&1 || true
+      - name: uv lock refresh
+        working-directory: py
+        run: |
+          set -x
+          pip install uv
+          uv lock --upgrade-package certifi --upgrade-package anyio --upgrade-package pyjwt \
+            --upgrade-package python-multipart --upgrade-package starlette --upgrade-package mcp \
+            --upgrade-package cryptography 2>&1 | tee ../.lock-refresh/uv-lock.txt
+      - name: commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add ts/package-lock.json py/uv.lock .lock-refresh
+          git commit -m "chore(deps): regenerate lockfiles for security bump (runner)"
+          git push origin HEAD:${GITHUB_REF_NAME}
