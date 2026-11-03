@@ -1,6 +1,6 @@
 {
   "name": "@hebbianvault/mcp",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "description": "Customer-installable MCP server for the Hebbian tenant brain. One package, scope-by-token (Employee or Company). Install in Claude Code, Claude Desktop, Cursor, Cowork, or any MCP-compatible agent.",
   "type": "module",
   "main": "dist/index.js",
@@ -51,7 +51,7 @@
     "node": ">=20.0.0"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0"
+    "@modelcontextprotocol/sdk": "^1.32.0"
   },
   "devDependencies": {
     "@types/jest": "^29.5.14",

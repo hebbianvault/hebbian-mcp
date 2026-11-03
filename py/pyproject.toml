@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "hebbianvault-mcp"
-version = "0.6.1"
+version = "0.6.2"
 description = "Customer-installable MCP server for the Hebbian tenant brain (Python). Same 13 tools as the Node.js sibling @hebbianvault/mcp."
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -15,7 +15,7 @@ authors = [
 ]
 
 dependencies = [
-    "mcp>=1.0.0",
+    "mcp>=1.30.0,<2",
     "httpx>=0.27.0",
 ]
 
