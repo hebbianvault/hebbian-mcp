@@ -1,2 +1,0 @@
-Using CPython 3.11.17 interpreter at: /opt/hostedtoolcache/Python/3.11.17/x64/bin/python3
-Resolved 42 packages in 1.30s
