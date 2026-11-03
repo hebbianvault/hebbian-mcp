@@ -1,5 +1,6 @@
 # TEMPORARY, branch-only: regenerates lockfiles for the security bump on a runner with
 # registry access, commits them back, and is deleted from the branch before review.
+# rev2: mcp capped <2 in pyproject.
 name: lock-refresh (temporary)
 on:
   push:
