@@ -30,6 +30,11 @@ export interface HebbianConfig {
   tenant?: string;
   /** Opt in to UUID-keyset pagination when retrieving the workspace graph. */
   graphPagination: boolean;
+  /**
+   * Opt in to the admin tool set (usage, gdpr_export, audit_log) via
+   * HEBBIAN_ADMIN_TOOLS. Off by default (DEC #284).
+   */
+  adminTools: boolean;
 }
 
 interface ConfigFile {
@@ -58,10 +63,13 @@ export function loadConfig(): HebbianConfig {
   // ── Graph pagination (opt-in) ─────────────────────────────────────────────
   const graphPagination = isTruthy(process.env.HEBBIAN_GRAPH_PAGINATION);
 
+  // ── Admin tool set (opt-in, DEC #284) ─────────────────────────────────────
+  const adminTools = isTruthy(process.env.HEBBIAN_ADMIN_TOOLS);
+
   // ── Token (env first) ──────────────────────────────────────────────────────
   const envToken = process.env.HEBBIAN_API_TOKEN ?? process.env.HEBBIAN_TOKEN;
   if (envToken && envToken.length > 0) {
-    return { apiUrl, token: envToken, tenant: envTenant, graphPagination };
+    return { apiUrl, token: envToken, tenant: envTenant, graphPagination, adminTools };
   }
 
   // ── Token (config file) ────────────────────────────────────────────────────
@@ -74,6 +82,7 @@ export function loadConfig(): HebbianConfig {
         token: file.token,
         tenant: envTenant ?? file.tenant,
         graphPagination,
+        adminTools,
       };
     }
   }

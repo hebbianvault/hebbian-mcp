@@ -9,7 +9,7 @@
  * Auth: set HEBBIAN_API_TOKEN (or HEBBIAN_TOKEN) env var, or write a config
  * file at ~/.config/hebbian/mcp-tenant.json with { "token": "hbn_..." }.
  *
- * 13 tools:
+ * 10 everyday tools, plus 3 opt-in admin tools (DEC #284):
  *   hebbian_read_node       — fetch a node by UUID
  *   hebbian_search          — search the workspace for matching nodes
  *   hebbian_ask             — synthesis Q&A returned with source quotes
@@ -20,6 +20,8 @@
  *   hebbian_salience        — salience/activity history for a node
  *   hebbian_recent_activity — recent workspace activity timeline
  *   hebbian_whoami          — token identity, tenant, role, and scope
+ *
+ * Admin tools, listed and served ONLY when HEBBIAN_ADMIN_TOOLS=1 (off by default):
  *   hebbian_usage           — usage and spend-meter summary
  *   hebbian_gdpr_export     — owner-authorized tenant data export
  *   hebbian_audit_log       — tenant audit-log entries
@@ -43,40 +45,27 @@ import { runAbsorb } from "./absorb/cli.js";
 import { startServingAfterHealthCheck } from "./server_startup.js";
 import { frameUntrustedText } from "./tools/untrusted_content.js";
 import {
-  HEBBIAN_READ_NODE, handleReadNode,
-  HEBBIAN_SEARCH, handleSearch,
-  HEBBIAN_ASK, handleAsk,
-  HEBBIAN_CONTEXT, handleContext,
-  HEBBIAN_CAPTURE, handleCapture,
-  HEBBIAN_TRAVERSE, handleTraverse,
-  HEBBIAN_PROVENANCE, handleProvenance,
-  HEBBIAN_SALIENCE, handleSalience,
-  HEBBIAN_RECENT_ACTIVITY, handleRecentActivity,
-  HEBBIAN_WHOAMI, handleWhoami,
-  HEBBIAN_USAGE, handleUsage,
-  HEBBIAN_GDPR_EXPORT, handleGdprExport,
-  HEBBIAN_AUDIT_LOG, handleAuditLog,
+  handleReadNode,
+  handleSearch,
+  handleAsk,
+  handleContext,
+  handleCapture,
+  handleTraverse,
+  handleProvenance,
+  handleSalience,
+  handleRecentActivity,
+  handleWhoami,
+  handleUsage,
+  handleGdprExport,
+  handleAuditLog,
 } from "./tools/index.js";
+import { listedTools, adminToolRefusal } from "./toolset.js";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
-// ── All registered tools ───────────────────────────────────────────────────────
-
-const TOOLS = [
-  HEBBIAN_READ_NODE,
-  HEBBIAN_SEARCH,
-  HEBBIAN_ASK,
-  HEBBIAN_CONTEXT,
-  HEBBIAN_CAPTURE,
-  HEBBIAN_TRAVERSE,
-  HEBBIAN_PROVENANCE,
-  HEBBIAN_SALIENCE,
-  HEBBIAN_RECENT_ACTIVITY,
-  HEBBIAN_WHOAMI,
-  HEBBIAN_USAGE,
-  HEBBIAN_GDPR_EXPORT,
-  HEBBIAN_AUDIT_LOG,
-] as const;
+// ── Registered tools ───────────────────────────────────────────────────────────
+// Everyday set always; admin set (usage, gdpr_export, audit_log) only when
+// HEBBIAN_ADMIN_TOOLS is on. See src/toolset.ts (DEC #284).
 
 // ── Boot ───────────────────────────────────────────────────────────────────────
 
@@ -95,6 +84,8 @@ async function main(): Promise<void> {
     config.graphPagination,
   );
 
+  const tools = listedTools(config.adminTools);
+
   const server = new Server(
     { name: SERVER_NAME, version: SERVER_VERSION },
     { capabilities: { tools: {} } },
@@ -102,7 +93,7 @@ async function main(): Promise<void> {
 
   // ── list_tools ─────────────────────────────────────────────────────────────
   server.setRequestHandler(ListToolsRequestSchema, () => ({
-    tools: [...TOOLS],
+    tools,
   }));
 
   // ── call_tool ──────────────────────────────────────────────────────────────
@@ -110,6 +101,11 @@ async function main(): Promise<void> {
     const { name, arguments: rawArgs } = req.params;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const args = (rawArgs ?? {}) as Record<string, any>;
+
+    const refusal = adminToolRefusal(name, config.adminTools);
+    if (refusal !== null) {
+      return { content: [{ type: "text", text: refusal }], isError: true };
+    }
 
     try {
       let result: string;

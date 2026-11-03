@@ -14,7 +14,7 @@ The adapter is a thin client. Your token goes in; the Hebbian service decides wh
 
 ## Install
 
-Both packages are published and expose the same 13 tools and the same configuration. Use whichever matches your MCP host.
+Both packages are published and expose the same 13 tools (10 everyday, 3 opt-in admin) and the same configuration. Use whichever matches your MCP host.
 
 ```bash
 # Node.js (npm) — run directly, no global install needed
@@ -33,7 +33,7 @@ See [Quick start (TypeScript)](#quick-start-typescript) and [Quick start (Python
 | `@hebbianvault/mcp` | TypeScript / Node.js | `npm install -g @hebbianvault/mcp` |
 | `hebbianvault-mcp` | Python | `pip install hebbianvault-mcp` |
 
-Both expose the same 13 tools and the same configuration. Use whichever matches your MCP host.
+Both expose the same 13 tools (10 everyday, 3 opt-in admin) and the same configuration. Use whichever matches your MCP host.
 
 ## Quick start (TypeScript)
 
@@ -165,6 +165,13 @@ Generate, name, and revoke tokens from the AI Tools tab of your Hebbian integrat
 | `hebbian_salience` | See a node's recent activity over time |
 | `hebbian_recent_activity` | Catch up on recent changes in your workspace |
 | `hebbian_whoami` | Show the tenant, role, scope, and principal for your token |
+
+### Admin tools (opt-in)
+
+These three tools are not listed or callable by default. Set `HEBBIAN_ADMIN_TOOLS=1` in the MCP server's environment to turn them on. Your token and role still decide what each one returns.
+
+| Tool | What it does |
+|---|---|
 | `hebbian_usage` | Show your usage and spend-meter summary; optionally view company usage |
 | `hebbian_gdpr_export` | Export tenant data for a GDPR access request (owner access required) |
 | `hebbian_audit_log` | Retrieve tenant audit-log `items[]` (empty if no data), with optional limit and offset |
@@ -178,6 +185,7 @@ All access control is decided by the Hebbian service; results only ever include 
 | `HEBBIAN_API_TOKEN` | Your token (required). `HEBBIAN_TOKEN` is also accepted. |
 | `HEBBIAN_API_URL` | Override the API base URL (Enterprise self-host). Defaults to the Hebbian SaaS API. |
 | `HEBBIAN_TENANT` | Optional workspace slug — only needed if your account belongs to more than one workspace. |
+| `HEBBIAN_ADMIN_TOOLS` | Opt in to the admin tools `hebbian_usage`, `hebbian_gdpr_export` and `hebbian_audit_log` (`1`, `true`, `yes`, or `on`). Off by default. |
 
 ### Config file (alternative)
 
