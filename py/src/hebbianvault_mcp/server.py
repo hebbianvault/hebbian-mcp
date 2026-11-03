@@ -28,7 +28,12 @@ from mcp.types import TextContent, Tool
 from .client import HebbianApiError, HebbianClient
 from .config import HebbianConfig, load_config
 from .package_info import PACKAGE_VERSION
-from .tools import TOOL_HANDLERS, TOOL_SCHEMAS
+from .tools import (
+    ADMIN_TOOL_NAMES,
+    admin_tool_refusal,
+    enabled_tool_handlers,
+    enabled_tool_schemas,
+)
 
 logging.basicConfig(
     level=logging.WARNING,
@@ -59,6 +64,10 @@ def create_server(
         graph_pagination=config.graph_pagination,
     )
 
+    # DEC #284: admin tools (usage, gdpr_export, audit_log) only with HEBBIAN_ADMIN_TOOLS on.
+    tool_schemas = enabled_tool_schemas(config.admin_tools)
+    tool_handlers = enabled_tool_handlers(config.admin_tools)
+
     app = Server(SERVER_NAME, version=SERVER_VERSION)
 
     @app.list_tools()
@@ -69,17 +78,19 @@ def create_server(
                 description=schema["description"],
                 inputSchema=schema["inputSchema"],
             )
-            for schema in TOOL_SCHEMAS
+            for schema in tool_schemas
         ]
 
     @app.call_tool()
     async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:  # type: ignore[override]
-        handler = TOOL_HANDLERS.get(name)
+        handler = tool_handlers.get(name)
+        if handler is None and name in ADMIN_TOOL_NAMES:
+            return [TextContent(type="text", text=admin_tool_refusal(name))]
         if handler is None:
             return [
                 TextContent(
                     type="text",
-                    text=f"Unknown tool: {name}. Available tools: {', '.join(TOOL_HANDLERS)}",
+                    text=f"Unknown tool: {name}. Available tools: {', '.join(tool_handlers)}",
                 )
             ]
         try:

@@ -1,6 +1,10 @@
 """
 hebbianvault_mcp.tools — All 13 Hebbian MCP tool definitions + handlers.
 
+10 are the everyday set. usage, gdpr_export and audit_log are the opt-in admin
+set (DEC #284): the server lists and serves them only with HEBBIAN_ADMIN_TOOLS
+on. See enabled_tool_schemas / enabled_tool_handlers.
+
 Each tool handler takes a HebbianClient and returns a JSON-serialisable string.
 
 The Hebbian API exposes the workspace as a single scoped graph plus a handful
@@ -1190,6 +1194,38 @@ TOOL_HANDLERS: dict[str, Any] = {
     "hebbian_gdpr_export": handle_gdpr_export,
     "hebbian_audit_log": handle_audit_log,
 }
+
+# ── Tool sets (DEC #284) ──────────────────────────────────────────────────────
+
+ADMIN_TOOLS_ENV = "HEBBIAN_ADMIN_TOOLS"
+"""Env var that opts in to the admin tool set. Off unless 1/true/yes/on."""
+
+ADMIN_TOOL_NAMES: frozenset[str] = frozenset(
+    {"hebbian_usage", "hebbian_gdpr_export", "hebbian_audit_log"}
+)
+"""Admin tools: listed and served only when the admin tool set is opted in."""
+
+
+def enabled_tool_schemas(admin_tools: bool) -> list[dict[str, Any]]:
+    """Tool schemas to list: the everyday set, plus the admin set when opted in."""
+    return [s for s in TOOL_SCHEMAS if admin_tools or s["name"] not in ADMIN_TOOL_NAMES]
+
+
+def enabled_tool_handlers(admin_tools: bool) -> dict[str, Any]:
+    """Tool handlers to serve: the everyday set, plus the admin set when opted in."""
+    return {
+        name: handler
+        for name, handler in TOOL_HANDLERS.items()
+        if admin_tools or name not in ADMIN_TOOL_NAMES
+    }
+
+
+def admin_tool_refusal(name: str) -> str:
+    """Refusal text for an admin tool called while the admin set is off."""
+    return (
+        f"Tool {name} is an admin tool and is off. Admin tools are opt-in: "
+        f"set {ADMIN_TOOLS_ENV}=1 in this MCP server's environment to enable them."
+    )
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

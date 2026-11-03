@@ -38,6 +38,11 @@ class HebbianConfig:
     graph_pagination: bool = False
     """Whether graph-backed tools opt into cursor pagination."""
 
+    admin_tools: bool = False
+    """Whether the opt-in admin tool set (usage, gdpr_export, audit_log) is listed.
+
+    Set via HEBBIAN_ADMIN_TOOLS. Off by default (DEC #284)."""
+
 
 def load_config() -> HebbianConfig:
     """
@@ -54,6 +59,7 @@ def load_config() -> HebbianConfig:
     api_url = os.environ.get("HEBBIAN_API_URL", DEFAULT_API_URL)
     env_tenant = (os.environ.get("HEBBIAN_TENANT") or "").strip() or None
     graph_pagination = _is_truthy(os.environ.get("HEBBIAN_GRAPH_PAGINATION"))
+    admin_tools = _is_truthy(os.environ.get("HEBBIAN_ADMIN_TOOLS"))
 
     # ── Token from env ─────────────────────────────────────────────────────────
     env_token = os.environ.get("HEBBIAN_API_TOKEN") or os.environ.get("HEBBIAN_TOKEN")
@@ -63,6 +69,7 @@ def load_config() -> HebbianConfig:
             token=env_token,
             tenant=env_tenant,
             graph_pagination=graph_pagination,
+            admin_tools=admin_tools,
         )
 
     # ── Token from config file ─────────────────────────────────────────────────
@@ -75,6 +82,7 @@ def load_config() -> HebbianConfig:
                 token=file_cfg["token"],
                 tenant=env_tenant or file_cfg.get("tenant"),
                 graph_pagination=graph_pagination,
+                admin_tools=admin_tools,
             )
 
     raise RuntimeError(
