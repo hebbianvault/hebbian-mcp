@@ -1,12 +1,2 @@
 Using CPython 3.11.17 interpreter at: /opt/hostedtoolcache/Python/3.11.17/x64/bin/python3
-Resolved 42 packages in 1.46s
-Removed httpcore2 v2.16.0
-Added httpx-sse v0.4.3
-Removed httpx2 v2.16.0
-Removed httpx2-jsfetch v1.0
-Updated mcp v2.3.0 -> v1.30.0
-Removed mcp-types v2.3.0
-Removed opentelemetry-api v1.45.2
-Added pydantic-settings v2.16.2
-Added python-dotenv v1.2.4
-Removed truststore v0.10.5
+Resolved 42 packages in 1.30s
