@@ -1,0 +1,115 @@
+# npm audit report
+
+@babel/core  <=7.29.0
+@babel/core: Arbitrary File Read via sourceMappingURL Comment - https://github.com/advisories/GHSA-4x5r-pxfx-6jf8
+fix available via `npm audit fix`
+node_modules/@babel/core
+
+@hono/node-server  <=2.1.2
+Severity: moderate
+Node.js Adapter for Hono: Path traversal in `serve-static` on Windows via encoded backslash (`%5C`) - https://github.com/advisories/GHSA-frvp-7c67-39w9
+@hono/node-server: `serveStatic` decodes the request path a second time, leading to bypass of middleware on static paths - https://github.com/advisories/GHSA-rmxm-3fg6-px4f
+fix available via `npm audit fix`
+node_modules/@hono/node-server
+
+deepmerge  >=4.2.0
+deepmerge mergeObject() allows prototype poisoning of returned objects - https://github.com/advisories/GHSA-gcqx-w48m-w2h4
+fix available via `npm audit fix --force`
+Will install jest@25.1.0, which is a breaking change
+node_modules/deepmerge
+  jest-config  >=19.1.0-alpha.eed82034
+  Depends on vulnerable versions of babel-jest
+  Depends on vulnerable versions of deepmerge
+  Depends on vulnerable versions of glob
+  Depends on vulnerable versions of jest-circus
+  Depends on vulnerable versions of jest-runner
+  node_modules/jest-config
+    @jest/core  *
+    Depends on vulnerable versions of @jest/reporters
+    Depends on vulnerable versions of @jest/transform
+    Depends on vulnerable versions of jest-config
+    Depends on vulnerable versions of jest-resolve-dependencies
+    Depends on vulnerable versions of jest-runner
+    Depends on vulnerable versions of jest-runtime
+    Depends on vulnerable versions of jest-snapshot
+    node_modules/@jest/core
+      jest  >=25.2.0-alpha.86
+      Depends on vulnerable versions of @jest/core
+      Depends on vulnerable versions of jest-cli
+      node_modules/jest
+        ts-jest  >=25.10.0-alpha.1
+        Depends on vulnerable versions of @jest/transform
+        Depends on vulnerable versions of babel-jest
+        Depends on vulnerable versions of jest
+        node_modules/ts-jest
+      jest-cli  >=25.2.0-alpha.86
+      Depends on vulnerable versions of @jest/core
+      Depends on vulnerable versions of create-jest
+      Depends on vulnerable versions of jest-config
+      node_modules/jest-cli
+    create-jest  >=29.7.0
+    Depends on vulnerable versions of jest-config
+    node_modules/create-jest
+
+minimatch  <11.0.1
+Severity: moderate
+minimatch has potential denial of service via globparts amplification - https://github.com/advisories/GHSA-g3hv-75wg-m249
+fix available via `npm audit fix --force`
+Will install jest@25.1.0, which is a breaking change
+node_modules/minimatch
+  glob  3.0.0 - 13.0.6
+  Depends on vulnerable versions of minimatch
+  node_modules/glob
+    @jest/reporters  *
+    Depends on vulnerable versions of @jest/transform
+    Depends on vulnerable versions of glob
+    node_modules/@jest/reporters
+    jest-runtime  >=24.0.0-alpha.0
+    Depends on vulnerable versions of @jest/globals
+    Depends on vulnerable versions of @jest/transform
+    Depends on vulnerable versions of glob
+    Depends on vulnerable versions of jest-snapshot
+    node_modules/jest-runtime
+      jest-circus  >=25.2.4
+      Depends on vulnerable versions of @jest/expect
+      Depends on vulnerable versions of jest-runtime
+      Depends on vulnerable versions of jest-snapshot
+      node_modules/jest-circus
+      jest-runner  >=24.0.0-alpha.0
+      Depends on vulnerable versions of @jest/transform
+      Depends on vulnerable versions of jest-runtime
+      node_modules/jest-runner
+    test-exclude  4.2.2 || >=5.0.0
+    Depends on vulnerable versions of glob
+    Depends on vulnerable versions of minimatch
+    node_modules/test-exclude
+      babel-plugin-istanbul  >=5.0.1
+      Depends on vulnerable versions of test-exclude
+      node_modules/babel-plugin-istanbul
+        @jest/transform  *
+        Depends on vulnerable versions of babel-plugin-istanbul
+        node_modules/@jest/transform
+          babel-jest  >=24.0.0-alpha.0
+          Depends on vulnerable versions of @jest/transform
+          Depends on vulnerable versions of babel-plugin-istanbul
+          node_modules/babel-jest
+          jest-snapshot  >=27.0.0-next.0
+          Depends on vulnerable versions of @jest/transform
+          node_modules/jest-snapshot
+            @jest/expect  *
+            Depends on vulnerable versions of jest-snapshot
+            node_modules/@jest/expect
+              @jest/globals  >=28.0.0-alpha.0
+              Depends on vulnerable versions of @jest/expect
+              node_modules/@jest/globals
+            jest-resolve-dependencies  >=27.0.0-next.0
+            Depends on vulnerable versions of jest-snapshot
+            node_modules/jest-resolve-dependencies
+
+23 vulnerabilities (5 low, 18 moderate)
+
+To address issues that do not require attention, run:
+  npm audit fix
+
+To address all issues (including breaking changes), run:
+  npm audit fix --force
