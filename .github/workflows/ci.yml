@@ -17,6 +17,7 @@ jobs:
   docs:
     name: Documentation
     runs-on: ${{ vars.CI_RUNNER_4CPU || 'depot-ubuntu-24.04-4' }}
+    timeout-minutes: 10 # p95 0.9m x3, floor 10 (n=40, measured 2026-11-03)
 
     steps:
       - uses: actions/checkout@v4
@@ -42,6 +43,7 @@ jobs:
   thin-client:
     name: Thin client guard
     runs-on: ${{ vars.CI_RUNNER_4CPU || 'depot-ubuntu-24.04-4' }}
+    timeout-minutes: 10 # p95 1.1m x3, floor 10 (n=31, measured 2026-11-03)
 
     steps:
       - uses: actions/checkout@v4
@@ -61,6 +63,7 @@ jobs:
   contract-drift:
     name: Contract drift
     runs-on: ${{ vars.CI_RUNNER_4CPU || 'depot-ubuntu-24.04-4' }}
+    timeout-minutes: 10 # p95 1.1m x3, floor 10 (n=39, measured 2026-11-03)
 
     steps:
       - uses: actions/checkout@v4
@@ -78,6 +81,7 @@ jobs:
   ts:
     name: TypeScript — lint + typecheck + tests
     runs-on: ${{ vars.CI_RUNNER_4CPU || 'depot-ubuntu-24.04-4' }}
+    timeout-minutes: 10 # p95 1.1m x3, floor 10 (n=39, measured 2026-11-03)
     defaults:
       run:
         working-directory: ts/
@@ -109,6 +113,7 @@ jobs:
   py:
     name: Python — lint + typecheck + tests
     runs-on: ${{ vars.CI_RUNNER_4CPU || 'depot-ubuntu-24.04-4' }}
+    timeout-minutes: 10 # p95 1.2m x3, floor 10 (n=39, measured 2026-11-03)
     defaults:
       run:
         working-directory: py/
