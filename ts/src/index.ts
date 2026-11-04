@@ -59,13 +59,11 @@ import {
   handleGdprExport,
   handleAuditLog,
 } from "./tools/index.js";
-import { listedTools, adminToolRefusal } from "./toolset.js";
-
-// ── Constants ──────────────────────────────────────────────────────────────────
+import { listTools, isListedTool, unknownToolResult } from "./tool_list.js";
 
 // ── Registered tools ───────────────────────────────────────────────────────────
 // Everyday set always; admin set (usage, gdpr_export, audit_log) only when
-// HEBBIAN_ADMIN_TOOLS is on. See src/toolset.ts (DEC #284).
+// HEBBIAN_ADMIN_TOOLS is on. See src/tool_list.ts (DEC #284).
 
 // ── Boot ───────────────────────────────────────────────────────────────────────
 
@@ -84,8 +82,6 @@ async function main(): Promise<void> {
     config.graphPagination,
   );
 
-  const tools = listedTools(config.adminTools);
-
   const server = new Server(
     { name: SERVER_NAME, version: SERVER_VERSION },
     { capabilities: { tools: {} } },
@@ -93,7 +89,7 @@ async function main(): Promise<void> {
 
   // ── list_tools ─────────────────────────────────────────────────────────────
   server.setRequestHandler(ListToolsRequestSchema, () => ({
-    tools,
+    tools: listTools(config),
   }));
 
   // ── call_tool ──────────────────────────────────────────────────────────────
@@ -102,10 +98,7 @@ async function main(): Promise<void> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const args = (rawArgs ?? {}) as Record<string, any>;
 
-    const refusal = adminToolRefusal(name, config.adminTools);
-    if (refusal !== null) {
-      return { content: [{ type: "text", text: refusal }], isError: true };
-    }
+    if (!isListedTool(config, name)) return unknownToolResult(name);
 
     try {
       let result: string;
@@ -171,10 +164,7 @@ async function main(): Promise<void> {
           result = await handleAuditLog(client, args as { offset?: number; limit?: number });
           break;
         default:
-          return {
-            content: [{ type: "text", text: `Unknown tool: ${name}` }],
-            isError: true,
-          };
+          return unknownToolResult(name);
       }
 
       return {

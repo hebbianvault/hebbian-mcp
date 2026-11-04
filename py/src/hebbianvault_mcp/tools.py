@@ -1220,14 +1220,6 @@ def enabled_tool_handlers(admin_tools: bool) -> dict[str, Any]:
     }
 
 
-def admin_tool_refusal(name: str) -> str:
-    """Refusal text for an admin tool called while the admin set is off."""
-    return (
-        f"Tool {name} is an admin tool and is off. Admin tools are opt-in: "
-        f"set {ADMIN_TOOLS_ENV}=1 in this MCP server's environment to enable them."
-    )
-
-
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _require_str(args: dict[str, Any], key: str) -> str:
