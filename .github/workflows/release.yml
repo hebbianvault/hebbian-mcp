@@ -21,6 +21,7 @@ jobs:
     # 2026-07-16, still current per npm docs 2026-07-31). Enforced by
     # .github/runner-allowlist.txt — amend that file only with a gate ruling.
     runs-on: ubuntu-latest
+    timeout-minutes: 10 # p95 0.5m x3, floor 10 (n=2, measured 2026-11-03)
     # Trusted publishing (OIDC): no NPM_TOKEN secret. One-time setup on
     # npmjs.com → package @hebbianvault/mcp → Settings → Trusted Publisher →
     # GitHub Actions → repo hebbianvault/hebbian-mcp, workflow release.yml.
@@ -59,6 +60,7 @@ jobs:
     name: Publish hebbianvault-mcp to PyPI
     needs: verify-publish-source
     runs-on: ${{ vars.CI_RUNNER_4CPU || 'depot-ubuntu-24.04-4' }}
+    timeout-minutes: 10 # p95 1.2m x3, floor 10 (n=2, measured 2026-11-03)
     # Trusted publishing (OIDC): no PYPI_API_TOKEN secret. One-time setup on
     # pypi.org → project hebbianvault-mcp → Publishing → add GitHub publisher:
     # owner hebbianvault, repo hebbian-mcp, workflow release.yml.
@@ -101,6 +103,7 @@ jobs:
     name: Verify npm and PyPI registry parity
     needs: [publish-npm, publish-pypi]
     runs-on: ${{ vars.CI_RUNNER_4CPU || 'depot-ubuntu-24.04-4' }}
+    timeout-minutes: 10 # p95 0.8m x3, floor 10 (n=2, measured 2026-11-03)
     steps:
       - uses: actions/setup-node@v4
         with:
@@ -155,6 +158,7 @@ jobs:
   bump-homebrew-formula:
     needs: publish-npm
     runs-on: ${{ vars.CI_RUNNER_4CPU || 'depot-ubuntu-24.04-4' }}
+    timeout-minutes: 10 # no successful run; 2 failed runs took 0.8 / 1.5m, x3, floor 10 (measured 2026-11-03)
     steps:
       - name: Extract npm package version
         id: ver
