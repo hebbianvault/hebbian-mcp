@@ -5,6 +5,10 @@ on:
     branches: [main, dev]
   pull_request:
     branches: [main, dev]
+  # Merge queue (founder ruling on, 2026-11-05): the two required checks (ts, py)
+  # must report on the queue's merge group or the queue stalls.
+  merge_group:
+    types: [checks_requested]
   schedule:
     - cron: "17 3 * * *"
 
@@ -15,6 +19,8 @@ concurrency:
 
 jobs:
   docs:
+    # Not a required check: skip in the merge queue to keep CI spend flat.
+    if: github.event_name != 'merge_group'
     name: Documentation
     runs-on: ${{ vars.CI_RUNNER_4CPU || 'depot-ubuntu-24.04-4' }}
 
@@ -40,6 +46,8 @@ jobs:
           done < docs/live-hosts.txt
 
   thin-client:
+    # Not a required check: skip in the merge queue to keep CI spend flat.
+    if: github.event_name != 'merge_group'
     name: Thin client guard
     runs-on: ${{ vars.CI_RUNNER_4CPU || 'depot-ubuntu-24.04-4' }}
 
@@ -59,6 +67,8 @@ jobs:
           python3 -m pytest tests/test_check_thin_client_logic.py -q
 
   contract-drift:
+    # Not a required check: skip in the merge queue to keep CI spend flat.
+    if: github.event_name != 'merge_group'
     name: Contract drift
     runs-on: ${{ vars.CI_RUNNER_4CPU || 'depot-ubuntu-24.04-4' }}
 
