@@ -1197,9 +1197,6 @@ TOOL_HANDLERS: dict[str, Any] = {
 
 # ── Tool sets (DEC #284) ──────────────────────────────────────────────────────
 
-ADMIN_TOOLS_ENV = "HEBBIAN_ADMIN_TOOLS"
-"""Env var that opts in to the admin tool set. Off unless 1/true/yes/on."""
-
 ADMIN_TOOL_NAMES: frozenset[str] = frozenset(
     {"hebbian_usage", "hebbian_gdpr_export", "hebbian_audit_log"}
 )
@@ -1218,14 +1215,6 @@ def enabled_tool_handlers(admin_tools: bool) -> dict[str, Any]:
         for name, handler in TOOL_HANDLERS.items()
         if admin_tools or name not in ADMIN_TOOL_NAMES
     }
-
-
-def admin_tool_refusal(name: str) -> str:
-    """Refusal text for an admin tool called while the admin set is off."""
-    return (
-        f"Tool {name} is an admin tool and is off. Admin tools are opt-in: "
-        f"set {ADMIN_TOOLS_ENV}=1 in this MCP server's environment to enable them."
-    )
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────

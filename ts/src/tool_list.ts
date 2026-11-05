@@ -1,5 +1,5 @@
 /**
- * src/toolset.ts
+ * src/tool_list.ts
  *
  * Which tools this adapter lists and serves.
  *
@@ -10,6 +10,7 @@
  * token may do; this flag only decides whether the agent is offered the tool.
  */
 
+import type { HebbianConfig } from "./config.js";
 import {
   HEBBIAN_READ_NODE,
   HEBBIAN_SEARCH,
@@ -26,8 +27,7 @@ import {
   HEBBIAN_AUDIT_LOG,
 } from "./tools/index.js";
 
-/** Env var that opts in to the admin tool set. Off unless set to 1/true/yes/on. */
-export const ADMIN_TOOLS_ENV = "HEBBIAN_ADMIN_TOOLS";
+type ToolConfig = Pick<HebbianConfig, "adminTools">;
 
 /** Tools every agent gets. */
 export const EVERYDAY_TOOLS = [
@@ -50,18 +50,24 @@ export const ADMIN_TOOLS = [
   HEBBIAN_AUDIT_LOG,
 ] as const;
 
-export const ADMIN_TOOL_NAMES: ReadonlySet<string> = new Set(ADMIN_TOOLS.map((t) => t.name));
-
 /** The tools to list for this run. */
-export function listedTools(adminTools: boolean) {
-  return adminTools ? [...EVERYDAY_TOOLS, ...ADMIN_TOOLS] : [...EVERYDAY_TOOLS];
+export function listTools(config: ToolConfig) {
+  return config.adminTools ? [...EVERYDAY_TOOLS, ...ADMIN_TOOLS] : [...EVERYDAY_TOOLS];
 }
 
-/** Refusal text for an admin tool called while the admin set is off, else null. */
-export function adminToolRefusal(name: string, adminTools: boolean): string | null {
-  if (adminTools || !ADMIN_TOOL_NAMES.has(name)) return null;
-  return (
-    `Tool ${name} is an admin tool and is off. Admin tools are opt-in: ` +
-    `set ${ADMIN_TOOLS_ENV}=1 in this MCP server's environment to enable them.`
-  );
+/** True when `name` is in the list this run offers. */
+export function isListedTool(config: ToolConfig, name: string): boolean {
+  return listTools(config).some((t) => t.name === name);
+}
+
+/**
+ * The error for a name that is not listed. An admin tool called without the
+ * opt-in gets exactly this, so the answer is not an oracle for which admin
+ * tools exist.
+ */
+export function unknownToolResult(name: string) {
+  return {
+    content: [{ type: "text" as const, text: `Unknown tool: ${name}` }],
+    isError: true,
+  };
 }

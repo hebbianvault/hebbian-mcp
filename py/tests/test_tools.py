@@ -74,6 +74,62 @@ def test_read_tool_descriptions_treat_results_as_data() -> None:
             )
 
 
+# ── Admin tools are opt-in (DEC #284) ─────────────────────────────────────────
+
+ADMIN_TOOLS = {"hebbian_usage", "hebbian_gdpr_export", "hebbian_audit_log"}
+
+
+def _server(admin_tools: bool) -> tuple[Any, HebbianClient]:
+    from hebbianvault_mcp.config import HebbianConfig
+    from hebbianvault_mcp.server import create_server
+
+    client = mock_client()
+    config = HebbianConfig(api_url="http://x", token="t", admin_tools=admin_tools)
+    return create_server(config=config, client=client), client
+
+
+def _listed(app: Any) -> set[str]:
+    from mcp.types import ListToolsRequest
+
+    result = asyncio.run(app.request_handlers[ListToolsRequest](ListToolsRequest(method="tools/list")))
+    return {t.name for t in result.root.tools}
+
+
+def _call(app: Any, name: str) -> str:
+    from mcp.types import CallToolRequest, CallToolRequestParams
+
+    req = CallToolRequest(
+        method="tools/call", params=CallToolRequestParams(name=name, arguments={})
+    )
+    result = asyncio.run(app.request_handlers[CallToolRequest](req))
+    return result.root.content[0].text
+
+
+def test_default_tool_list_has_no_admin_tools() -> None:
+    app, _ = _server(admin_tools=False)
+    names = _listed(app)
+    assert not names & ADMIN_TOOLS
+    assert "hebbian_search" in names
+
+
+def test_admin_opt_in_lists_all_three_admin_tools() -> None:
+    app, _ = _server(admin_tools=True)
+    assert ADMIN_TOOLS <= _listed(app)
+
+
+def test_admin_call_without_opt_in_is_unknown_tool() -> None:
+    app, client = _server(admin_tools=False)
+    admin_text = _call(app, "hebbian_audit_log")
+    assert admin_text.startswith("Unknown tool: hebbian_audit_log")
+    # Same message as a made-up name (apart from the name): not an oracle.
+    assert admin_text.replace("hebbian_audit_log", "X") == _call(app, "hebbian_nope").replace(
+        "hebbian_nope", "X"
+    )
+    for admin in ADMIN_TOOLS:
+        assert admin not in admin_text.split("Available tools:")[-1]
+    client.get.assert_not_awaited()
+
+
 # ── Mock client factory ───────────────────────────────────────────────────────
 
 def mock_client(

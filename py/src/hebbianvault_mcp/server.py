@@ -28,12 +28,7 @@ from mcp.types import TextContent, Tool
 from .client import HebbianApiError, HebbianClient
 from .config import HebbianConfig, load_config
 from .package_info import PACKAGE_VERSION
-from .tools import (
-    ADMIN_TOOL_NAMES,
-    admin_tool_refusal,
-    enabled_tool_handlers,
-    enabled_tool_schemas,
-)
+from .tools import enabled_tool_handlers, enabled_tool_schemas
 
 logging.basicConfig(
     level=logging.WARNING,
@@ -84,8 +79,8 @@ def create_server(
     @app.call_tool()
     async def call_tool(name: str, arguments: dict[str, Any]) -> list[TextContent]:  # type: ignore[override]
         handler = tool_handlers.get(name)
-        if handler is None and name in ADMIN_TOOL_NAMES:
-            return [TextContent(type="text", text=admin_tool_refusal(name))]
+        # An unlisted admin tool gets the same text as any unknown name, so the
+        # answer is not an oracle for which admin tools exist.
         if handler is None:
             return [
                 TextContent(
