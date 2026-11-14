@@ -127,3 +127,7 @@ def _read_config_file(path: Path) -> dict[str, str]:
     except Exception as exc:  # noqa: BLE001
         logger.warning("Could not read config file at %r: %s", str(path), exc)
         return {}
+
+
+# pyright gate RED drill (shared-platform#2165): planted type error, never merge.
+_PYRIGHT_GATE_RED_DRILL: int = "not an int"
