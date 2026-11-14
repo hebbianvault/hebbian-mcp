@@ -1,0 +1,6 @@
+{
+  "pythonVersion": "3.11",
+  "typeCheckingMode": "standard",
+  "extraPaths": ["py/src"],
+  "exclude": ["**/node_modules", "**/__pycache__", "**/.*"]
+}

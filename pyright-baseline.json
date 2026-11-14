@@ -1,0 +1,37 @@
+{
+ "pyright": "1.1.414",
+ "total": 58,
+ "files_analysed": 22,
+ "note": "errors per file and rule that main carried when recorded; pyright-gate fails on any count above these. Burn down, then re-record with `tools/pyright-gate/pyright-gate baseline`.",
+ "errors": {
+  "py/src/hebbianvault_mcp/client.py": {
+   "reportMissingImports": 1
+  },
+  "py/src/hebbianvault_mcp/server.py": {
+   "reportMissingImports": 3
+  },
+  "py/src/hebbianvault_mcp/tools.py": {
+   "reportAssignmentType": 1
+  },
+  "py/tests/test_absorb.py": {
+   "reportMissingImports": 1
+  },
+  "py/tests/test_client.py": {
+   "reportMissingImports": 3
+  },
+  "py/tests/test_config.py": {
+   "reportMissingImports": 1
+  },
+  "py/tests/test_tools.py": {
+   "reportAttributeAccessIssue": 43,
+   "reportMissingImports": 1
+  },
+  "py/tests/test_toolset.py": {
+   "reportArgumentType": 1,
+   "reportMissingImports": 2
+  },
+  "tests/test_check_thin_client_logic.py": {
+   "reportMissingImports": 1
+  }
+ }
+}

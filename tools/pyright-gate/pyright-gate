@@ -1,0 +1,325 @@
+#!/usr/bin/env python3
+"""tools/pyright-gate/pyright-gate: pyright type checking against a committed baseline (shared-platform #800).
+
+Founder 2026-10-19 ("pyright across lanes better yeah? / top done do it"). Every Python repo carries a
+pyrightconfig.json and a pyright-baseline.json at its root: the baseline records the errors main has today, and
+the gate fails on any error ABOVE it, so the old debt is burned down ticket by ticket while no new debt lands.
+One script for CI (tests/pyright-gate.sh), the shared pre-push hook (git-hooks/pre-push arm F) and the factory.
+
+  pyright-gate check    [--root DIR]   0 no new errors, 1 new errors (RED, listed), 2 cannot run (LOUD)
+  pyright-gate baseline [--root DIR]   (re)write DIR/pyright-baseline.json from a run; 0 written, 2 cannot run
+  pyright-gate fetch                   put the pinned pyright in the cache (needs PyPI); prints its index.js
+  pyright-gate --version               the pinned pyright version
+
+The baseline counts errors per (file, rule), not per line, so an edit that shifts lines never reads as new. A
+(file, rule) whose count rises is RED, with every current error of that pair listed. Counts that fell are named
+(run `baseline` to lock the gain in); they never fail. Warnings and information are not counted.
+
+Determinism (the same tree gives the same answer on the box, in a jail and on a CI runner):
+  - pyright is pinned: the PyPI wheel of PIN_VERSION (it bundles pyright's JS build), checked against PIN_SHA256,
+    run with the system `node`. Cached under ${PYRIGHT_GATE_CACHE:-${XDG_CACHE_HOME:-~/.cache}/pyright-gate}; when
+    that filesystem has under 100 MB free (a jail's tmpfs HOME) under $TMPDIR/pyright-gate-<uid>, said on stderr.
+    PYRIGHT_GATE_DIST=<dir holding index.js> uses another copy (its package.json must say PIN_VERSION).
+  - the Python environment is an empty venv (stdlib only, made once in the cache), never whatever site-packages
+    the machine has: a third-party import resolves the same everywhere (unresolved, in the baseline).
+  - the baseline records the pyright version; a baseline from another version is LOUD rc 2, never compared.
+Nothing here fails silently: a pyright crash, unreadable JSON, zero files analysed, a missing or unreadable
+baseline, a failed fetch or a checksum mismatch is rc 2 with the reason on stderr.
+"""
+import argparse
+import collections
+import functools
+import hashlib
+import json
+import os
+import shutil
+import stat
+import subprocess
+import sys
+import tempfile
+import time
+import urllib.request
+import zipfile
+
+PIN_VERSION = "1.1.414"
+PIN_SHA256 = "2a6b4b3298c9eec174c5ed83bd338de6eee82df2992f3e1930e6199d381be36f"
+PIN_URL = ("https://files.pythonhosted.org/packages/d7/ba/18b6e682ead424ad24bcc134339ae5d1b931cd9ae260540592a058a91279/"
+           f"pyright-{PIN_VERSION}-py3-none-any.whl")
+CONFIG = "pyrightconfig.json"
+BASELINE = "pyright-baseline.json"
+RC_OK, RC_RED, RC_CANNOT = 0, 1, 2
+FETCH_DEADLINE_S = 600  # the whole wheel download (about 6 MB)
+RUN_TIMEOUT_S = 900  # one pyright run; about 10 s on shared-platform today
+CACHE_NEED_BYTES = 100 << 20  # the wheel, the unpacked dist and the empty venv take about 35 MB
+
+
+class CannotRun(Exception):
+    pass
+
+
+def loud(msg):
+    print(f"pyright-gate: CANNOT RUN: {msg}", file=sys.stderr)
+
+
+def free_bytes(path):
+    """free bytes on the filesystem that would hold path (its nearest existing parent)"""
+    path = os.path.abspath(path)  # a relative path would walk up to "" and loop
+    while not os.path.exists(path) and os.path.dirname(path) != path:
+        path = os.path.dirname(path)
+    st = os.statvfs(path)
+    return st.f_bavail * st.f_frsize
+
+
+@functools.lru_cache(maxsize=None)
+def cache_dir():
+    # absolute: node runs with cwd=--root, where a relative cache path names nothing (and pre-push would litter the work tree)
+    c = os.environ.get("PYRIGHT_GATE_CACHE")
+    if c:
+        return os.path.abspath(c)
+    c = os.path.abspath(os.path.join(os.environ.get("XDG_CACHE_HOME") or os.path.expanduser("~/.cache"), "pyright-gate"))
+    if os.path.isdir(os.path.join(c, PIN_VERSION)) or free_bytes(c) >= CACHE_NEED_BYTES:
+        return c
+    # a lane-job jail's HOME is a 16 MB tmpfs: the unpacked pyright does not fit there, its TMPDIR does
+    t = os.path.join(tempfile.gettempdir(), f"pyright-gate-{os.getuid()}")
+    print(f"pyright-gate: {c} has under {CACHE_NEED_BYTES >> 20} MB free: caching in {t} instead", file=sys.stderr)
+    try:
+        os.mkdir(t, 0o700)
+    except FileExistsError:
+        pass
+    st = os.lstat(t)  # a shared /tmp: never run a pyright another user could have planted
+    if not stat.S_ISDIR(st.st_mode) or st.st_uid != os.getuid() or st.st_mode & 0o022:
+        raise CannotRun(f"{t} is not a directory owned by uid {os.getuid()} and closed to others: not using it as "
+                        f"the pyright cache (set PYRIGHT_GATE_CACHE)")
+    return t
+
+
+def dist_version(dist):
+    try:
+        with open(os.path.join(dist, "package.json"), encoding="utf-8") as f:
+            return json.load(f).get("version")
+    except (OSError, ValueError) as e:
+        raise CannotRun(f"cannot read {dist}/package.json: {e}")
+
+
+def fetch():
+    """The pinned pyright dist dir (holding index.js): the cached copy, else downloaded and verified."""
+    over = os.environ.get("PYRIGHT_GATE_DIST")
+    if over:
+        over = os.path.abspath(over)
+        if not os.path.isfile(os.path.join(over, "index.js")):
+            raise CannotRun(f"PYRIGHT_GATE_DIST={over} holds no index.js")
+        v = dist_version(over)
+        if v != PIN_VERSION:
+            raise CannotRun(f"PYRIGHT_GATE_DIST={over} is pyright {v}, the gate pins {PIN_VERSION}")
+        return over
+    root = os.path.join(cache_dir(), PIN_VERSION)
+    dist = os.path.join(root, "pyright", "dist")
+    if os.path.isfile(os.path.join(dist, "index.js")) and dist_version(dist) == PIN_VERSION:
+        return dist
+    os.makedirs(cache_dir(), exist_ok=True)
+    stage = tempfile.mkdtemp(prefix=f".{PIN_VERSION}.", dir=cache_dir())
+    try:
+        whl = os.path.join(stage, "pyright.whl")
+        try:
+            # timeout= bounds each socket read, not the whole download: a trickling mirror is cut at the deadline
+            deadline = time.monotonic() + FETCH_DEADLINE_S
+            with urllib.request.urlopen(PIN_URL, timeout=120) as r, open(whl, "wb") as f:
+                for chunk in iter(lambda: r.read1(1 << 16), b""):  # read1: returns what arrived, never waits to fill
+                    if time.monotonic() > deadline:
+                        raise CannotRun(f"downloading pyright {PIN_VERSION} took over {FETCH_DEADLINE_S} s: gave up")
+                    f.write(chunk)
+        except OSError as e:
+            raise CannotRun(f"cannot download pyright {PIN_VERSION} from {PIN_URL}: {e} "
+                            f"(run `pyright-gate fetch` where PyPI is reachable, or set PYRIGHT_GATE_DIST)")
+        h = hashlib.sha256()
+        with open(whl, "rb") as f:
+            for chunk in iter(lambda: f.read(1 << 20), b""):
+                h.update(chunk)
+        if h.hexdigest() != PIN_SHA256:
+            raise CannotRun(f"pyright wheel sha256 {h.hexdigest()} != pinned {PIN_SHA256}: refusing to run it")
+        with zipfile.ZipFile(whl) as z:
+            members = [m for m in z.namelist() if m.startswith("pyright/dist/")]
+            if not members:
+                raise CannotRun("the pinned wheel holds no pyright/dist/: it does not bundle pyright's JS build")
+            z.extractall(os.path.join(stage, "x"), members)
+        os.unlink(whl)
+        try:
+            os.rename(os.path.join(stage, "x"), root)
+        except OSError:
+            # another run installed it first: keep theirs if it is whole
+            if not os.path.isfile(os.path.join(dist, "index.js")):
+                raise CannotRun(f"cannot install the pyright dist into {root}")
+    finally:
+        shutil.rmtree(stage, ignore_errors=True)
+    if dist_version(dist) != PIN_VERSION:
+        raise CannotRun(f"{dist} is not pyright {PIN_VERSION}")
+    return dist
+
+
+def empty_python():
+    """The interpreter of a stdlib-only venv in the cache, so site-packages never differ between machines."""
+    venv = os.path.join(cache_dir(), "empty-venv")
+    py = os.path.join(venv, "bin", "python")
+    if os.access(py, os.X_OK):
+        return py
+    os.makedirs(cache_dir(), exist_ok=True)
+    stage = tempfile.mkdtemp(prefix=".empty-venv.", dir=cache_dir())
+    try:
+        r = subprocess.run([sys.executable, "-m", "venv", "--without-pip", os.path.join(stage, "v")],
+                           capture_output=True, text=True)
+        if r.returncode != 0:
+            raise CannotRun(f"cannot make the empty venv: {r.stderr.strip()[-300:]}")
+        try:
+            os.rename(os.path.join(stage, "v"), venv)
+        except OSError:
+            if not os.access(py, os.X_OK):
+                raise CannotRun(f"cannot install the empty venv into {venv}")
+    finally:
+        shutil.rmtree(stage, ignore_errors=True)
+    return py
+
+
+def run_pyright(root):
+    """{(relpath, rule): [diagnostic, ...]} of the errors pyright reports for root, and the files analysed."""
+    if not os.path.isfile(os.path.join(root, CONFIG)):
+        raise CannotRun(f"{root} has no {CONFIG}")
+    node = shutil.which("node")
+    if not node:
+        raise CannotRun("node is not on PATH (pyright is a node program)")
+    dist = fetch()
+    cmd = [node, os.path.join(dist, "index.js"), "--outputjson", "--project", os.path.join(root, CONFIG),
+           "--pythonpath", empty_python()]
+    try:
+        r = subprocess.run(cmd, cwd=root, capture_output=True, text=True, timeout=RUN_TIMEOUT_S)
+    except subprocess.TimeoutExpired:
+        raise CannotRun(f"pyright ran over {RUN_TIMEOUT_S} s under {root}: killed, no verdict")
+    if r.returncode not in (0, 1):
+        raise CannotRun(f"pyright rc {r.returncode}: {(r.stderr or r.stdout).strip()[-600:]}")
+    try:
+        out = json.loads(r.stdout)
+    except ValueError as e:
+        raise CannotRun(f"pyright printed no JSON ({e}): {(r.stderr or r.stdout).strip()[-600:]}")
+    if out.get("version") != PIN_VERSION:
+        raise CannotRun(f"pyright says version {out.get('version')}, the gate pins {PIN_VERSION}")
+    analysed = (out.get("summary") or {}).get("filesAnalyzed")
+    if not analysed:
+        raise CannotRun(f"pyright analysed {analysed!r} files under {root}: an empty check is not a pass "
+                        f"(check {CONFIG} include/exclude)")
+    real = os.path.realpath(root)
+    errs = collections.defaultdict(list)
+    for d in out.get("generalDiagnostics") or []:
+        if d.get("severity") != "error":
+            continue
+        f = os.path.realpath(d.get("file") or "")
+        rel = os.path.relpath(f, real) if f.startswith(real + os.sep) else f
+        errs[(rel.replace(os.sep, "/"), d.get("rule") or "-")].append(d)
+    return errs, analysed
+
+
+def read_baseline(root):
+    p = os.path.join(root, BASELINE)
+    try:
+        with open(p, encoding="utf-8") as f:
+            b = json.load(f)
+    except FileNotFoundError:
+        raise CannotRun(f"{p} is missing: record one with `pyright-gate baseline --root {root}` and commit it")
+    except (OSError, ValueError) as e:
+        raise CannotRun(f"cannot read {p}: {e}")
+    if b.get("pyright") != PIN_VERSION:
+        raise CannotRun(f"{p} was recorded with pyright {b.get('pyright')}, the gate pins {PIN_VERSION}: re-record it "
+                        f"(`pyright-gate baseline`) in the PR that moves the pin")
+    counts = b.get("errors")
+    if not isinstance(counts, dict) or not all(
+            isinstance(r, dict) and all(isinstance(n, int) for n in r.values()) for r in counts.values()):
+        raise CannotRun(f"{p} has no `errors` map of {{file: {{rule: count}}}}")
+    analysed = b.get("files_analysed")
+    if not isinstance(analysed, int):
+        raise CannotRun(f"{p} has no integer `files_analysed`")
+    return {(f, rule): n for f, rules in counts.items() for rule, n in rules.items()}, analysed
+
+
+def cmd_baseline(root):
+    errs, analysed = run_pyright(root)
+    tree = collections.defaultdict(dict)
+    for (f, rule), ds in sorted(errs.items()):
+        tree[f][rule] = len(ds)
+    total = sum(len(ds) for ds in errs.values())
+    doc = {"pyright": PIN_VERSION, "total": total, "files_analysed": analysed,
+           "note": "errors per file and rule that main carried when recorded; pyright-gate fails on any count above "
+                   "these. Burn down, then re-record with `tools/pyright-gate/pyright-gate baseline`.",
+           "errors": {f: dict(sorted(r.items())) for f, r in sorted(tree.items())}}
+    p = os.path.join(root, BASELINE)
+    fd, tmp = tempfile.mkstemp(prefix=f".{BASELINE}.", dir=root)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        json.dump(doc, f, indent=1, sort_keys=False)
+        f.write("\n")
+    os.replace(tmp, p)
+    print(f"pyright-gate: baseline written: {p} ({total} errors in {len(tree)} files, {analysed} files analysed, "
+          f"pyright {PIN_VERSION})")
+    return RC_OK
+
+
+def cmd_check(root):
+    base, base_analysed = read_baseline(root)
+    errs, analysed = run_pyright(root)
+    # a config or tree change that drops most files out of the check would turn everything GREEN by omission
+    if analysed * 2 < base_analysed:
+        raise CannotRun(f"pyright analysed {analysed} files, the baseline was recorded over {base_analysed}: less than "
+                        f"half is not a check (if the drop is deliberate, re-record the baseline and say why in the PR)")
+    now_total = sum(len(ds) for ds in errs.values())
+    base_total = sum(base.values())
+    new = {k: ds for k, ds in errs.items() if len(ds) > base.get(k, 0)}
+    fell = sorted(k for k, n in base.items() if len(errs.get(k, ())) < n)
+    if new:
+        extra = sum(len(ds) - base.get(k, 0) for k, ds in new.items())
+        print(f"pyright-gate: RED: {extra} new pyright error(s) above the baseline in {len(new)} (file, rule) pair(s) "
+              f"(now {now_total}, baseline {base_total}, pyright {PIN_VERSION}):", file=sys.stderr)
+        for (f, rule), ds in sorted(new.items()):
+            print(f"  {f} [{rule}]: {len(ds)} now, {base.get((f, rule), 0)} in the baseline; the current ones:",
+                  file=sys.stderr)
+            for d in ds:
+                line = ((d.get("range") or {}).get("start") or {}).get("line", -1) + 1
+                msg = " ".join((d.get("message") or "").split())
+                print(f"    {f}:{line}: {msg[:300]}", file=sys.stderr)
+        print("pyright-gate: fix them (or, for a deliberate move or rename, re-record the baseline and say why in "
+              "the PR)", file=sys.stderr)
+        return RC_RED
+    msg = f"pyright-gate: GREEN: no error above the baseline ({now_total} now, baseline {base_total}, " \
+          f"{analysed} files, pyright {PIN_VERSION})"
+    if fell:
+        msg += f"; {len(fell)} (file, rule) pair(s) fell below it: `pyright-gate baseline` locks the gain in"
+    print(msg)
+    return RC_OK
+
+
+def main(argv):
+    ap = argparse.ArgumentParser(prog="pyright-gate", description=__doc__.split("\n\n")[0])
+    ap.add_argument("--version", action="store_true", help="print the pinned pyright version")
+    sub = ap.add_subparsers(dest="cmd")
+    for name in ("check", "baseline"):
+        s = sub.add_parser(name)
+        s.add_argument("--root", default=".", help="the repo root holding pyrightconfig.json (default: .)")
+    sub.add_parser("fetch")
+    a = ap.parse_args(argv)
+    if a.version:
+        print(PIN_VERSION)
+        return RC_OK
+    try:
+        if a.cmd == "fetch":
+            print(os.path.join(fetch(), "index.js"))
+            return RC_OK
+        if a.cmd in ("check", "baseline"):
+            root = os.path.abspath(a.root)
+            return cmd_check(root) if a.cmd == "check" else cmd_baseline(root)
+    except CannotRun as e:
+        loud(str(e))
+        return RC_CANNOT
+    except Exception as e:  # a crash is rc 2 (cannot run), never python's rc 1, which reads as RED
+        loud(f"crashed: {type(e).__name__}: {e}")
+        return RC_CANNOT
+    ap.print_usage(sys.stderr)
+    return RC_CANNOT
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
