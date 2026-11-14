@@ -139,15 +139,18 @@ jobs:
       - name: Lint (ruff)
         run: uv run ruff check src/ tests/
 
+      - name: Tests
+        run: uv run pytest
+
       # pyright gate (shared-platform#800, #2165): replaces the advisory `pyright src/ || true`, which could
       # never fail. tools/pyright-gate is a vendored copy of shared-platform tools/pyright-gate/pyright-gate
       # (pinned pyright, fetched from PyPI); it fails on any (file, rule) error count above
       # pyright-baseline.json, and rc 2 (cannot run) is red too.
       - name: Typecheck (pyright gate, no error above pyright-baseline.json)
+        # After Tests (a red gate never hides the test signal); own timeout so a hang ends loud.
+        if: ${{ !cancelled() }}
+        timeout-minutes: 12
         working-directory: ${{ github.workspace }}
         env:
           PYRIGHT_GATE_CACHE: ${{ runner.temp }}/pyright-gate
         run: python3 tools/pyright-gate/pyright-gate check --root .
-
-      - name: Tests
-        run: uv run pytest
