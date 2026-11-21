@@ -1197,9 +1197,6 @@ TOOL_HANDLERS: dict[str, Any] = {
 
 # ── Tool sets (DEC #284) ──────────────────────────────────────────────────────
 
-ADMIN_TOOLS_ENV = "HEBBIAN_ADMIN_TOOLS"
-"""Env var that opts in to the admin tool set. Off unless 1/true/yes/on."""
-
 ADMIN_TOOL_NAMES: frozenset[str] = frozenset(
     {"hebbian_usage", "hebbian_gdpr_export", "hebbian_audit_log"}
 )
