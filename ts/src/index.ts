@@ -59,13 +59,13 @@ import {
   handleGdprExport,
   handleAuditLog,
 } from "./tools/index.js";
-import { listedTools, adminToolRefusal } from "./toolset.js";
+import { listTools, rejectUnlistedTool, unknownToolResult } from "./tool_list.js";
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
 // ── Registered tools ───────────────────────────────────────────────────────────
 // Everyday set always; admin set (usage, gdpr_export, audit_log) only when
-// HEBBIAN_ADMIN_TOOLS is on. See src/toolset.ts (DEC #284).
+// HEBBIAN_ADMIN_TOOLS is on. See src/tool_list.ts (DEC #284).
 
 // ── Boot ───────────────────────────────────────────────────────────────────────
 
@@ -84,7 +84,7 @@ async function main(): Promise<void> {
     config.graphPagination,
   );
 
-  const tools = listedTools(config.adminTools);
+  const tools = listTools(config);
 
   const server = new Server(
     { name: SERVER_NAME, version: SERVER_VERSION },
@@ -102,10 +102,8 @@ async function main(): Promise<void> {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const args = (rawArgs ?? {}) as Record<string, any>;
 
-    const refusal = adminToolRefusal(name, config.adminTools);
-    if (refusal !== null) {
-      return { content: [{ type: "text", text: refusal }], isError: true };
-    }
+    const rejected = rejectUnlistedTool(config, name);
+    if (rejected !== null) return rejected;
 
     try {
       let result: string;
@@ -171,10 +169,7 @@ async function main(): Promise<void> {
           result = await handleAuditLog(client, args as { offset?: number; limit?: number });
           break;
         default:
-          return {
-            content: [{ type: "text", text: `Unknown tool: ${name}` }],
-            isError: true,
-          };
+          return unknownToolResult(name);
       }
 
       return {

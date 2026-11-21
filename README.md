@@ -172,9 +172,9 @@ These three tools are not listed or callable by default. Set `HEBBIAN_ADMIN_TOOL
 
 | Tool | What it does |
 |---|---|
-| `hebbian_usage` | Show your usage and spend-meter summary; optionally view company usage |
-| `hebbian_gdpr_export` | Export tenant data for a GDPR access request (owner access required) |
-| `hebbian_audit_log` | Retrieve tenant audit-log `items[]` (empty if no data), with optional limit and offset |
+| `hebbian_usage` | Show your usage and spend-meter summary; optionally view company usage (admin, opt-in with HEBBIAN_ADMIN_TOOLS=1) |
+| `hebbian_gdpr_export` | Export tenant data for a GDPR access request, owner access required (admin, opt-in with HEBBIAN_ADMIN_TOOLS=1) |
+| `hebbian_audit_log` | Retrieve tenant audit-log `items[]` (empty if no data), with optional limit and offset (admin, opt-in with HEBBIAN_ADMIN_TOOLS=1) |
 
 All access control is decided by the Hebbian service; results only ever include what your token is allowed to see.
 

@@ -59,10 +59,14 @@ async def test_admin_tools_listed_only_with_opt_in() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("name", sorted(ADMIN))
-async def test_admin_tool_call_refused_by_default(name: str) -> None:
+async def test_admin_tool_call_is_unknown_tool_by_default(name: str) -> None:
     server, client = _server(None)
     text = await _call(server, name)
-    assert "HEBBIAN_ADMIN_TOOLS" in text
+    assert text.startswith(f"Unknown tool: {name}.")
+    assert not any(admin in text.split("Available tools:")[1] for admin in ADMIN)
+    # Same wording as a made-up name: the list is not an oracle.
+    made_up = await _call(server, "hebbian_nope")
+    assert text.replace(name, "X") == made_up.replace("hebbian_nope", "X")
     client.get.assert_not_awaited()
 
 
